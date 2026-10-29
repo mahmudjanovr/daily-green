@@ -119,6 +119,81 @@ def test_delivery_skips_existing_branch(tmp_path: Path):
         github_client=github_client,
         dry_run=False,
         date_str="2026-10-29",
+        allow_live_mutations=True,
     )
     assert res.success is False
     assert "already" in res.message.lower()
+
+
+def test_delivery_live_mutations_rejected_when_not_allowed(tmp_path: Path):
+    """Assert deliver_pull_request raises DeliveryError if dry_run=False but allow_live_mutations=False."""
+    repo = RepoConfig(name="org/repo")
+    policy = SecurityPolicyConfig()
+    github_client = MockGitHubClient()
+    diff = "@@ -1,1 +1,2 @@\n+clean line\n"
+    gate = QualityGateResult(passed=True, reason="ok", patch_hash=compute_patch_hash(diff))
+
+    with pytest.raises(DeliveryError, match="ALLOW_LIVE_MUTATIONS is not explicitly enabled"):
+        deliver_pull_request(
+            workspace_dir=tmp_path,
+            task=_setup_test_task(),
+            quality_gate=gate,
+            diff_text=diff,
+            repo_config=repo,
+            policy=policy,
+            github_client=github_client,
+            dry_run=False,
+            allow_live_mutations=False,
+        )
+
+
+def test_delivery_live_mutations_success_when_explicitly_allowed(tmp_path: Path):
+    """Assert deliver_pull_request succeeds when dry_run=False and allow_live_mutations=True."""
+    repo = RepoConfig(name="org/repo")
+    policy = SecurityPolicyConfig()
+    github_client = MockGitHubClient()
+    diff = "@@ -1,1 +1,2 @@\n+clean line\n"
+    gate = QualityGateResult(passed=True, reason="ok", patch_hash=compute_patch_hash(diff))
+
+    res = deliver_pull_request(
+        workspace_dir=tmp_path,
+        task=_setup_test_task(),
+        quality_gate=gate,
+        diff_text=diff,
+        repo_config=repo,
+        policy=policy,
+        github_client=github_client,
+        dry_run=False,
+        allow_live_mutations=True,
+    )
+    assert res.success is True
+    assert res.is_dry_run is False
+    assert res.pr_number is not None
+    assert len(github_client.created_branches) == 1
+    assert len(github_client.created_prs) == 1
+
+
+def test_delivery_dry_run_always_safe_regardless_of_allow_live_mutations(tmp_path: Path):
+    """Assert dry_run=True performs zero mutations regardless of allow_live_mutations."""
+    repo = RepoConfig(name="org/repo")
+    policy = SecurityPolicyConfig()
+    diff = "@@ -1,1 +1,2 @@\n+clean line\n"
+    gate = QualityGateResult(passed=True, reason="ok", patch_hash=compute_patch_hash(diff))
+
+    for allow_live in (False, True):
+        github_client = MockGitHubClient()
+        res = deliver_pull_request(
+            workspace_dir=tmp_path,
+            task=_setup_test_task(),
+            quality_gate=gate,
+            diff_text=diff,
+            repo_config=repo,
+            policy=policy,
+            github_client=github_client,
+            dry_run=True,
+            allow_live_mutations=allow_live,
+        )
+        assert res.success is True
+        assert res.is_dry_run is True
+        assert len(github_client.created_branches) == 0
+        assert len(github_client.created_prs) == 0

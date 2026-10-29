@@ -229,3 +229,194 @@ repositories:
 
     assert result.exit_code == 0
     assert "Dry-run mode" in result.output
+
+
+def test_cli_deliver_rejects_live_delivery_when_allow_live_mutations_disabled(tmp_path: Path):
+    """CLI deliver command rejects live delivery if dry_run=False but ALLOW_LIVE_MUTATIONS is not enabled."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _setup_git_repo(repo_dir)
+
+    (repo_dir / "README.md").write_text("# Test Repository\n", encoding="utf-8")
+    diff = subprocess.run(["git", "diff", "--unified=3", "HEAD"], cwd=str(repo_dir), capture_output=True, text=True, check=True).stdout
+    diff_hash = compute_patch_hash(diff)
+    (repo_dir / "README.md").write_text("# Test Repository   \n", encoding="utf-8")
+
+    import json
+    artifact_file = tmp_path / "sealed_task.json"
+    artifact_payload = {
+        "repo": "test-org/test-repo",
+        "task": {
+            "id": "test-task",
+            "repo": "test-org/test-repo",
+            "title": "Clean README",
+            "description": "Fix whitespace",
+            "rationale": "Docs",
+            "acceptance_criteria": ["Clean"],
+            "risk_level": "low",
+            "validation_strategy": "format",
+            "source": "deterministic",
+            "target_files": ["README.md"],
+        },
+        "quality_gate": {
+            "passed": True,
+            "reason": "OK",
+            "patch_hash": diff_hash,
+            "changed_files": ["README.md"],
+        },
+        "diff_text": diff,
+        "dry_run": False,
+        "today_str": "2026-10-29",
+    }
+    artifact_file.write_text(json.dumps(artifact_payload), encoding="utf-8")
+
+    repos_config = tmp_path / "repos.yml"
+    repos_config.write_text("""
+repositories:
+  - name: "test-org/test-repo"
+    allowed_paths: ["README.md"]
+""", encoding="utf-8")
+
+    runner = CliRunner()
+    # Case 1: --no-dry-run with default (missing) ALLOW_LIVE_MUTATIONS
+    result = runner.invoke(main, [
+        "deliver",
+        "--sealed-artifact", str(artifact_file),
+        "--repos-config", str(repos_config),
+        "--source-dir", str(repo_dir),
+        "--no-dry-run",
+        "--mock-github",
+    ])
+    assert result.exit_code == 1
+    assert "Security violation" in result.output or "ALLOW_LIVE_MUTATIONS" in result.output
+
+    # Case 2: Dispatch requested live delivery (DRY_RUN=false) but ALLOW_LIVE_MUTATIONS=false in env
+    result_env = runner.invoke(main, [
+        "deliver",
+        "--sealed-artifact", str(artifact_file),
+        "--repos-config", str(repos_config),
+        "--source-dir", str(repo_dir),
+        "--mock-github",
+    ], env={"DRY_RUN": "false", "ALLOW_LIVE_MUTATIONS": "false"})
+    assert result_env.exit_code == 1
+    assert "ALLOW_LIVE_MUTATIONS" in result_env.output
+
+
+@pytest.mark.parametrize("invalid_val", ["", "   ", "invalid", "maybe", "0", "false", "no", "off"])
+def test_cli_deliver_rejects_live_delivery_on_invalid_or_blank_opt_in(tmp_path: Path, invalid_val: str):
+    """CLI deliver command fails closed when ALLOW_LIVE_MUTATIONS is blank or invalid."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _setup_git_repo(repo_dir)
+
+    (repo_dir / "README.md").write_text("# Test Repository\n", encoding="utf-8")
+    diff = subprocess.run(["git", "diff", "--unified=3", "HEAD"], cwd=str(repo_dir), capture_output=True, text=True, check=True).stdout
+    diff_hash = compute_patch_hash(diff)
+    (repo_dir / "README.md").write_text("# Test Repository   \n", encoding="utf-8")
+
+    import json
+    artifact_file = tmp_path / "sealed_task.json"
+    artifact_payload = {
+        "repo": "test-org/test-repo",
+        "task": {
+            "id": "test-task",
+            "repo": "test-org/test-repo",
+            "title": "Clean README",
+            "description": "Fix whitespace",
+            "rationale": "Docs",
+            "acceptance_criteria": ["Clean"],
+            "risk_level": "low",
+            "validation_strategy": "format",
+            "source": "deterministic",
+            "target_files": ["README.md"],
+        },
+        "quality_gate": {
+            "passed": True,
+            "reason": "OK",
+            "patch_hash": diff_hash,
+            "changed_files": ["README.md"],
+        },
+        "diff_text": diff,
+        "dry_run": False,
+        "today_str": "2026-10-29",
+    }
+    artifact_file.write_text(json.dumps(artifact_payload), encoding="utf-8")
+
+    repos_config = tmp_path / "repos.yml"
+    repos_config.write_text("""
+repositories:
+  - name: "test-org/test-repo"
+    allowed_paths: ["README.md"]
+""", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(main, [
+        "deliver",
+        "--sealed-artifact", str(artifact_file),
+        "--repos-config", str(repos_config),
+        "--source-dir", str(repo_dir),
+        "--no-dry-run",
+        "--mock-github",
+    ], env={"ALLOW_LIVE_MUTATIONS": invalid_val})
+    assert result.exit_code == 1
+    assert "ALLOW_LIVE_MUTATIONS" in result.output
+
+
+def test_cli_deliver_succeeds_when_live_mutations_explicitly_opted_in(tmp_path: Path):
+    """CLI deliver command succeeds with live delivery when both dry_run=False and ALLOW_LIVE_MUTATIONS=True."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _setup_git_repo(repo_dir)
+
+    (repo_dir / "README.md").write_text("# Test Repository\n", encoding="utf-8")
+    diff = subprocess.run(["git", "diff", "--unified=3", "HEAD"], cwd=str(repo_dir), capture_output=True, text=True, check=True).stdout
+    diff_hash = compute_patch_hash(diff)
+    (repo_dir / "README.md").write_text("# Test Repository   \n", encoding="utf-8")
+
+    import json
+    artifact_file = tmp_path / "sealed_task.json"
+    artifact_payload = {
+        "repo": "test-org/test-repo",
+        "task": {
+            "id": "test-task",
+            "repo": "test-org/test-repo",
+            "title": "Clean README",
+            "description": "Fix whitespace",
+            "rationale": "Docs",
+            "acceptance_criteria": ["Clean"],
+            "risk_level": "low",
+            "validation_strategy": "format",
+            "source": "deterministic",
+            "target_files": ["README.md"],
+        },
+        "quality_gate": {
+            "passed": True,
+            "reason": "OK",
+            "patch_hash": diff_hash,
+            "changed_files": ["README.md"],
+        },
+        "diff_text": diff,
+        "dry_run": False,
+        "today_str": "2026-10-29",
+    }
+    artifact_file.write_text(json.dumps(artifact_payload), encoding="utf-8")
+
+    repos_config = tmp_path / "repos.yml"
+    repos_config.write_text("""
+repositories:
+  - name: "test-org/test-repo"
+    allowed_paths: ["README.md"]
+""", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(main, [
+        "deliver",
+        "--sealed-artifact", str(artifact_file),
+        "--repos-config", str(repos_config),
+        "--source-dir", str(repo_dir),
+        "--no-dry-run",
+        "--allow-live-mutations",
+        "--mock-github",
+    ])
+    assert result.exit_code == 0
+    assert "created successfully" in result.output

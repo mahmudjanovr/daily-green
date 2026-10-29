@@ -77,8 +77,8 @@ jobs:
           echo "is_backup=${IS_BACKUP}" >> "$GITHUB_OUTPUT"
 
           DRY_RUN="true"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            DRY_RUN="$INPUT_DRY_RUN"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_DRY_RUN" = "false" ]; then
+            DRY_RUN="false"
           fi
           echo "dry_run=${DRY_RUN}" >> "$GITHUB_OUTPUT"
 
@@ -130,7 +130,7 @@ jobs:
   delivery:
     name: Deliver Sealed Pull Request (Trusted Delivery)
     needs: worker
-    if: needs.worker.outputs.has_task == 'true' && needs.worker.outputs.dry_run != 'true'
+    if: needs.worker.outputs.has_task == 'true' && needs.worker.outputs.dry_run == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -160,6 +160,8 @@ jobs:
       - name: Deliver Verified PR (No Untrusted Repository Code Executed)
         env:
           DAILYGREEN_ENABLED: ${{ vars.DAILYGREEN_ENABLED || 'true' }}
+          ALLOW_LIVE_MUTATIONS: ${{ vars.ALLOW_LIVE_MUTATIONS || 'false' }}
+          DRY_RUN: ${{ needs.worker.outputs.dry_run }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m dailygreen.cli deliver --sealed-artifact .dailygreen/sealed_task.json

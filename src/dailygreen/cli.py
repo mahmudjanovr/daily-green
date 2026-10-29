@@ -268,6 +268,7 @@ def discover_cmd(
 @click.option("--repos-config", type=click.Path(), help="Path to repos.yml")
 @click.option("--policy-config", type=click.Path(), help="Path to policy.yml")
 @click.option("--dry-run/--no-dry-run", default=None, help="Explicitly enable or disable dry-run mode")
+@click.option("--allow-live-mutations/--no-allow-live-mutations", default=None, help="Explicitly authorize live mutations")
 @click.option("--backup", is_flag=True, default=False, help="Run in backup check mode")
 @click.option("--source-dir", type=click.Path(exists=True), help="Local source directory for offline testing")
 @click.option("--token", help="GitHub Personal Access Token (defaults to GITHUB_TOKEN environment variable)")
@@ -278,6 +279,7 @@ def run_cmd(
     repos_config: Optional[str],
     policy_config: Optional[str],
     dry_run: Optional[bool],
+    allow_live_mutations: Optional[bool],
     backup: bool,
     source_dir: Optional[str],
     token: Optional[str],
@@ -287,7 +289,12 @@ def run_cmd(
     """Execute DailyGreen maintenance pipeline across authorized repositories."""
     logger = setup_logging()
     try:
-        cfg = load_config(repos_path=repos_config, policy_path=policy_config, override_dry_run=dry_run)
+        cfg = load_config(
+            repos_path=repos_config,
+            policy_path=policy_config,
+            override_dry_run=dry_run,
+            override_allow_live_mutations=allow_live_mutations,
+        )
     except ConfigurationError as e:
         logger.error(f"Configuration error: {e}")
         sys.exit(1)
@@ -347,6 +354,7 @@ def run_cmd(
 @click.option("--repos-config", type=click.Path(), help="Path to repos.yml")
 @click.option("--policy-config", type=click.Path(), help="Path to policy.yml")
 @click.option("--dry-run/--no-dry-run", default=None, help="Explicitly enable or disable dry-run")
+@click.option("--allow-live-mutations/--no-allow-live-mutations", default=None, help="Explicitly authorize live mutations")
 @click.option("--source-dir", type=click.Path(exists=True), help="Local source directory for testing")
 @click.option("--token", help="GitHub Personal Access Token (defaults to GITHUB_TOKEN environment variable)")
 @click.option("--mock-github", is_flag=True, default=False, help="Use mock GitHub client for local testing")
@@ -355,6 +363,7 @@ def deliver_cmd(
     repos_config: Optional[str],
     policy_config: Optional[str],
     dry_run: Optional[bool],
+    allow_live_mutations: Optional[bool],
     source_dir: Optional[str],
     token: Optional[str],
     mock_github: bool,
@@ -372,7 +381,12 @@ def deliver_cmd(
 
     # Load and validate configuration
     try:
-        cfg = load_config(repos_path=repos_config, policy_path=policy_config, override_dry_run=dry_run)
+        cfg = load_config(
+            repos_path=repos_config,
+            policy_path=policy_config,
+            override_dry_run=dry_run,
+            override_allow_live_mutations=allow_live_mutations,
+        )
     except ConfigurationError as e:
         logger.error(f"Configuration error: {e}")
         sys.exit(1)
@@ -424,6 +438,10 @@ def deliver_cmd(
         effective_dry_run = True
     else:
         effective_dry_run = bool(data.get("dry_run", True))
+
+    # Independent explicit live-mutation safety gate
+    if not effective_dry_run and not cfg.allow_live_mutations:
+        _fail("Security violation: Live delivery rejected. ALLOW_LIVE_MUTATIONS must be explicitly enabled to perform remote mutations.")
 
     today_str = data.get("today_str")
 
@@ -491,6 +509,7 @@ def deliver_cmd(
             github_client=github_client,
             dry_run=effective_dry_run,
             date_str=today_str,
+            allow_live_mutations=cfg.allow_live_mutations,
         )
 
         if delivery_res.success and not effective_dry_run:

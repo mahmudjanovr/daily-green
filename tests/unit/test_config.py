@@ -183,3 +183,46 @@ repositories:
 
     with pytest.raises(ConfigurationError, match="Duplicate repository definition"):
         load_config(repos_path=repos_file, policy_path=policy_file)
+
+
+@pytest.mark.parametrize(
+    "env_val,expected",
+    [
+        (None, False),
+        ("", False),
+        ("   ", False),
+        ("invalid", False),
+        ("maybe", False),
+        ("none", False),
+        ("2", False),
+        ("0", False),
+        ("false", False),
+        ("no", False),
+        ("off", False),
+        ("False", False),
+        ("1", True),
+        ("true", True),
+        ("yes", True),
+        ("on", True),
+        ("TRUE", True),
+        ("  true  ", True),
+    ],
+)
+def test_load_config_allow_live_mutations_safety_gate(monkeypatch, env_val, expected):
+    """Assert ALLOW_LIVE_MUTATIONS fails closed (False) unless explicitly set to true-like value."""
+    if env_val is None:
+        monkeypatch.delenv("ALLOW_LIVE_MUTATIONS", raising=False)
+    else:
+        monkeypatch.setenv("ALLOW_LIVE_MUTATIONS", env_val)
+
+    cfg = load_config()
+    assert cfg.allow_live_mutations is expected
+
+
+def test_load_config_override_allow_live_mutations(monkeypatch):
+    """Explicit override parameter takes precedence over ALLOW_LIVE_MUTATIONS env var."""
+    monkeypatch.setenv("ALLOW_LIVE_MUTATIONS", "true")
+    assert load_config(override_allow_live_mutations=False).allow_live_mutations is False
+
+    monkeypatch.setenv("ALLOW_LIVE_MUTATIONS", "false")
+    assert load_config(override_allow_live_mutations=True).allow_live_mutations is True

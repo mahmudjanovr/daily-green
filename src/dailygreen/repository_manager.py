@@ -29,7 +29,7 @@ class IsolatedWorkspace:
         self.repo_config = repo_config
         self.source_dir = Path(source_dir) if source_dir else None
         self.clone_url = clone_url
-        self.token = token or os.getenv("GITHUB_TOKEN", "").strip()
+        self.token = token.strip() if token is not None else os.getenv("GITHUB_TOKEN", "").strip()
         self._temp_dir: Optional[tempfile.TemporaryDirectory] = None
         self.workspace_path: Optional[Path] = None
 

@@ -177,6 +177,7 @@ def deliver_pull_request(
     github_client: GitHubClient,
     dry_run: bool = True,
     date_str: Optional[str] = None,
+    allow_live_mutations: bool = False,
 ) -> DeliveryResult:
     """
     Publish branch and Pull Request if and only if all gates pass.
@@ -229,6 +230,12 @@ def deliver_pull_request(
             message="Dry-run mode: All quality gates and tree integrity verified. Branch and PR creation simulated successfully.",
             contribution_status="UNKNOWN (Dry Run)",
             details={"branch": branch_name, "title": pr_title, "tree_sha": quality_gate.tree_sha},
+        )
+
+    # Gate 6: Explicit Live Mutation Authorization Gate
+    if not allow_live_mutations:
+        raise DeliveryError(
+            "Security violation: Live delivery rejected because ALLOW_LIVE_MUTATIONS is not explicitly enabled."
         )
 
     # Live delivery

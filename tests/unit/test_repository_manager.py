@@ -78,6 +78,9 @@ def test_remote_clone_without_token_disables_credential_helper(monkeypatch, tmp_
 
     repo_cfg = RepoConfig(name="test-org/public-repo", default_branch="main", allowed_paths=["README.md"])
 
+    # Test 1: Explicit token="" must override any ambient GITHUB_TOKEN in the environment
+    monkeypatch.setenv("GITHUB_TOKEN", "ambient_ghp_token_should_not_leak_into_unauthenticated_clone")
+
     with IsolatedWorkspace(
         repo_config=repo_cfg,
         clone_url="https://github.com/test-org/public-repo.git",
@@ -92,6 +95,27 @@ def test_remote_clone_without_token_disables_credential_helper(monkeypatch, tmp_
     assert env["GIT_CONFIG_VALUE_0"] == ""
     assert env["GIT_TERMINAL_PROMPT"] == "0"
     assert "GIT_CONFIG_KEY_1" not in env
+    assert "http.extraheader" not in env.values()
+    assert "AUTHORIZATION" not in str(env)
+
+    # Test 2: token=None when GITHUB_TOKEN is absent from environment
+    captured_calls.clear()
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    with IsolatedWorkspace(
+        repo_config=repo_cfg,
+        clone_url="https://github.com/test-org/public-repo.git",
+        token=None,
+    ):
+        pass
+
+    assert len(captured_calls) == 1
+    env2 = captured_calls[0]["env"]
+    assert env2["GIT_CONFIG_COUNT"] == "1"
+    assert env2["GIT_CONFIG_KEY_0"] == "credential.helper"
+    assert env2["GIT_CONFIG_VALUE_0"] == ""
+    assert env2["GIT_TERMINAL_PROMPT"] == "0"
+    assert "GIT_CONFIG_KEY_1" not in env2
 
 
 def test_remote_clone_does_not_persist_token_in_workspace_git_config(tmp_path: Path):

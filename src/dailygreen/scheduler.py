@@ -52,6 +52,16 @@ def execute_dailygreen_pipeline(
             is_backup_run=is_backup_run,
         ))
 
+    # 1b. Independent live mutation safety gate check
+    if not dry_run and not worker_only and not config.allow_live_mutations:
+        return _return_report(RunReport(
+            run_id=run_id,
+            repo=repo_config.name,
+            status=RunStatus.FAILED,
+            message="Security violation: Live delivery rejected because ALLOW_LIVE_MUTATIONS is not explicitly enabled.",
+            is_backup_run=is_backup_run,
+        ))
+
     # 2. Repository Authorization & Enablement
     if not repo_config.enabled:
         return _return_report(RunReport(
@@ -234,6 +244,7 @@ def execute_dailygreen_pipeline(
                 github_client=github_client,
                 dry_run=dry_run,
                 date_str=today_str,
+                allow_live_mutations=config.allow_live_mutations,
             )
 
             # Step G: State recording

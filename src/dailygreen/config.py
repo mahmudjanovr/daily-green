@@ -138,6 +138,7 @@ class DailyGreenConfig(BaseModel):
     """Root configuration for DailyGreen."""
     enabled: bool = Field(default=True, description="Global kill switch")
     dry_run: bool = Field(default=True, description="Default dry-run mode (safe)")
+    allow_live_mutations: bool = Field(default=False, description="Explicit opt-in required for live remote mutations")
     repos: list[RepoConfig] = Field(default_factory=list)
     policy: SecurityPolicyConfig = Field(default_factory=SecurityPolicyConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
@@ -160,6 +161,7 @@ def load_config(
     repos_path: Optional[str | Path] = None,
     policy_path: Optional[str | Path] = None,
     override_dry_run: Optional[bool] = None,
+    override_allow_live_mutations: Optional[bool] = None,
 ) -> DailyGreenConfig:
     """
     Load configuration from YAML files and environment variables.
@@ -195,6 +197,21 @@ def load_config(
             else:
                 # Any unrecognized, ambiguous, or true-like value resolves to True (fail-safe)
                 dry_run = True
+
+    # 2b. Check independent live mutations safety gate (defaults to False, fails closed)
+    if override_allow_live_mutations is not None:
+        allow_live_mutations = override_allow_live_mutations
+    else:
+        raw_env_live = os.getenv("ALLOW_LIVE_MUTATIONS")
+        if raw_env_live is None:
+            allow_live_mutations = False
+        else:
+            cleaned_live = raw_env_live.strip().lower()
+            if cleaned_live in ("1", "true", "yes", "on"):
+                allow_live_mutations = True
+            else:
+                # Missing, empty, unrecognized, or explicit false values fail closed (disallowed)
+                allow_live_mutations = False
 
     # 3. Locate policy file
     policy_cfg = SecurityPolicyConfig()
@@ -270,6 +287,7 @@ def load_config(
     return DailyGreenConfig(
         enabled=enabled,
         dry_run=dry_run,
+        allow_live_mutations=allow_live_mutations,
         repos=repos_list,
         policy=policy_cfg,
         ai=ai_cfg,

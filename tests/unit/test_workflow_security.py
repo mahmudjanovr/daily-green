@@ -45,7 +45,7 @@ def test_workflow_structure_and_commit_pinning():
     # 5. Delivery job conditions and permissions
     delivery_condition = delivery_job.get("if", "")
     assert "needs.worker.outputs.has_task == 'true'" in delivery_condition
-    assert "needs.worker.outputs.dry_run != 'true'" in delivery_condition
+    assert "needs.worker.outputs.dry_run == 'false'" in delivery_condition
 
     # 6. Verify third-party action pinning to full commit SHAs
     # Pattern: uses: owner/action@<40-hex-sha>
@@ -85,6 +85,16 @@ def test_workflow_expression_injection_and_kill_switch_variable():
     delivery_run_step = next(s for s in delivery_steps if "dailygreen.cli deliver" in s.get("run", ""))
     assert "DAILYGREEN_ENABLED" in delivery_run_step.get("env", {})
     assert "vars.DAILYGREEN_ENABLED" in delivery_run_step["env"]["DAILYGREEN_ENABLED"]
+    assert "ALLOW_LIVE_MUTATIONS" in delivery_run_step.get("env", {})
+    assert "vars.ALLOW_LIVE_MUTATIONS" in delivery_run_step["env"]["ALLOW_LIVE_MUTATIONS"]
+    assert "DRY_RUN" in delivery_run_step.get("env", {})
+    assert "needs.worker.outputs.dry_run" in delivery_run_step["env"]["DRY_RUN"]
+
+    # 2b. Verify mode determination safely defaults to dry_run="true"
+    mode_step = next(s for s in worker_steps if s.get("id") == "mode")
+    mode_script = mode_step.get("run", "")
+    assert 'DRY_RUN="true"' in mode_script
+    assert '[ "$INPUT_DRY_RUN" = "false" ]' in mode_script
 
     # 3. Verify Bash argument array construction and safe quoting (no unquoted variable expansion)
     worker_script = worker_run_step.get("run", "")

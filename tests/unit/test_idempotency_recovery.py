@@ -90,6 +90,7 @@ def test_scenario_3_recovery_when_branch_exists_without_pr(tmp_path: Path):
         github_client=client,
         dry_run=False,
         date_str="2026-10-29",
+        allow_live_mutations=True,
     )
     assert res.success is True
     assert "Recovered interrupted delivery" in res.message
