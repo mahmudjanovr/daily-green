@@ -70,6 +70,34 @@ def test_load_config_kill_switch(monkeypatch):
     assert cfg.enabled is False
 
 
+@pytest.mark.parametrize("val", ["", "   ", "invalid", "maybe", "2", "default", "undefined"])
+def test_load_config_kill_switch_fails_closed_on_empty_and_unrecognized(monkeypatch, val):
+    """Empty, whitespace-only, or unrecognized DAILYGREEN_ENABLED values fail closed (disabled)."""
+    monkeypatch.setenv("DAILYGREEN_ENABLED", val)
+    cfg = load_config()
+    assert cfg.enabled is False
+
+
+@pytest.mark.parametrize("val", ["true", "TRUE", "True", "1", "yes", "YES", "on", "ON"])
+def test_load_config_kill_switch_explicit_true_values(monkeypatch, val):
+    monkeypatch.setenv("DAILYGREEN_ENABLED", val)
+    cfg = load_config()
+    assert cfg.enabled is True
+
+
+@pytest.mark.parametrize("val", ["false", "FALSE", "False", "0", "no", "NO", "off", "OFF", "  false  ", "  0 "])
+def test_load_config_kill_switch_explicit_false_values(monkeypatch, val):
+    monkeypatch.setenv("DAILYGREEN_ENABLED", val)
+    cfg = load_config()
+    assert cfg.enabled is False
+
+
+def test_load_config_kill_switch_missing_defaults_to_true(monkeypatch):
+    monkeypatch.delenv("DAILYGREEN_ENABLED", raising=False)
+    cfg = load_config()
+    assert cfg.enabled is True
+
+
 def test_load_config_dry_run_override(monkeypatch):
     monkeypatch.setenv("DRY_RUN", "false")
     cfg = load_config()
@@ -78,6 +106,35 @@ def test_load_config_dry_run_override(monkeypatch):
     # Explicit override takes precedence
     cfg2 = load_config(override_dry_run=True)
     assert cfg2.dry_run is True
+
+
+@pytest.mark.parametrize("val", ["", "   ", "invalid", "maybe", "2", "default", "undefined"])
+def test_load_config_dry_run_fails_safe_on_empty_and_unrecognized(monkeypatch, val):
+    """Missing, empty, whitespace-only, or unrecognized values fail safe to True."""
+    monkeypatch.setenv("DRY_RUN", val)
+    cfg = load_config()
+    assert cfg.dry_run is True
+
+
+@pytest.mark.parametrize("val", ["true", "TRUE", "True", "1", "yes", "YES", "on", "ON"])
+def test_load_config_dry_run_explicit_true_values(monkeypatch, val):
+    monkeypatch.setenv("DRY_RUN", val)
+    cfg = load_config()
+    assert cfg.dry_run is True
+
+
+@pytest.mark.parametrize("val", ["false", "FALSE", "False", "0", "no", "NO", "off", "OFF", "  false  ", "  0 "])
+def test_load_config_dry_run_explicit_false_values(monkeypatch, val):
+    """Only explicit false values disable dry-run."""
+    monkeypatch.setenv("DRY_RUN", val)
+    cfg = load_config()
+    assert cfg.dry_run is False
+
+
+def test_load_config_dry_run_missing_defaults_to_true(monkeypatch):
+    monkeypatch.delenv("DRY_RUN", raising=False)
+    cfg = load_config()
+    assert cfg.dry_run is True
 
 
 def test_repo_config_empty_allowed_paths_rejected():

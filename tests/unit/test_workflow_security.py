@@ -57,3 +57,45 @@ def test_workflow_structure_and_commit_pinning():
         assert sha_pattern.match(action_clean), (
             f"Action '{action_clean}' is not pinned to a full 40-character commit SHA"
         )
+
+
+def test_workflow_expression_injection_and_kill_switch_variable():
+    wf_path = Path(".github/workflows/dailygreen.yml")
+    content = wf_path.read_text(encoding="utf-8")
+    data = yaml.safe_load(content)
+
+    # 1. Ensure ${{ inputs. }} is NEVER directly interpolated in any run: block
+    jobs = data.get("jobs", {})
+    for job_name, job_def in jobs.items():
+        steps = job_def.get("steps", [])
+        for step in steps:
+            run_script = step.get("run", "")
+            assert "${{ inputs." not in run_script, (
+                f"Expression injection vulnerability in job '{job_name}', step '{step.get('name')}': "
+                f"${{{{ inputs. ... }}}} must be passed via env: variables, not inside run: script"
+            )
+
+    # 2. Verify emergency kill switch uses repository variable fallback
+    worker_steps = jobs["worker"]["steps"]
+    worker_run_step = next(s for s in worker_steps if "dailygreen.cli run" in s.get("run", ""))
+    assert "DAILYGREEN_ENABLED" in worker_run_step.get("env", {})
+    assert "vars.DAILYGREEN_ENABLED" in worker_run_step["env"]["DAILYGREEN_ENABLED"]
+
+    delivery_steps = jobs["delivery"]["steps"]
+    delivery_run_step = next(s for s in delivery_steps if "dailygreen.cli deliver" in s.get("run", ""))
+    assert "DAILYGREEN_ENABLED" in delivery_run_step.get("env", {})
+    assert "vars.DAILYGREEN_ENABLED" in delivery_run_step["env"]["DAILYGREEN_ENABLED"]
+
+    # 3. Verify Bash argument array construction and safe quoting (no unquoted variable expansion)
+    worker_script = worker_run_step.get("run", "")
+    assert "ARGS=()" in worker_script, "Must initialize bash argument array ARGS=()"
+    assert 'ARGS+=(--repo "$INPUT_REPO")' in worker_script, "Must append repo argument using array syntax"
+    assert "ARGS+=(--backup)" in worker_script, "Must append backup flag using array syntax"
+    assert "ARGS+=(--worker-only)" in worker_script, "Must append worker-only flag using array syntax"
+    assert 'python -m dailygreen.cli run "${ARGS[@]}"' in worker_script, (
+        "Must invoke CLI using quoted array expansion \"${ARGS[@]}\""
+    )
+    assert "$REPO_FLAG" not in worker_script, "Unquoted $REPO_FLAG expansion must not be used"
+    assert "grep -Eq '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$'" in worker_script, (
+        "Must strictly validate owner/repo format before adding --repo argument"
+    )

@@ -165,16 +165,36 @@ def load_config(
     Load configuration from YAML files and environment variables.
     Fails closed if configuration is invalid or missing when explicitly requested.
     """
-    # 1. Check global kill switch via environment variable
-    env_enabled_str = os.getenv("DAILYGREEN_ENABLED", "true").strip().lower()
-    enabled = env_enabled_str not in ("0", "false", "no", "off")
+    # 1. Check global kill switch via environment variable (fail-closed if unknown or empty)
+    raw_env_enabled = os.getenv("DAILYGREEN_ENABLED")
+    if raw_env_enabled is None:
+        enabled = True
+    else:
+        cleaned_enabled = raw_env_enabled.strip().lower()
+        if cleaned_enabled in ("1", "true", "yes", "on"):
+            enabled = True
+        else:
+            # Empty, explicit false ("0", "false", "no", "off"), or unrecognized values fail closed (disabled)
+            enabled = False
 
-    # 2. Check dry-run setting (defaults to True)
+    # 2. Check dry-run setting (defaults to True, fails safe)
     if override_dry_run is not None:
         dry_run = override_dry_run
     else:
-        env_dry_run = os.getenv("DRY_RUN", "true").strip().lower()
-        dry_run = env_dry_run in ("1", "true", "yes", "on")
+        raw_env_dry_run = os.getenv("DRY_RUN")
+        if raw_env_dry_run is None:
+            dry_run = True
+        else:
+            cleaned_dry_run = raw_env_dry_run.strip().lower()
+            if not cleaned_dry_run:
+                # Empty or whitespace-only resolves to True (fail-safe)
+                dry_run = True
+            elif cleaned_dry_run in ("0", "false", "no", "off"):
+                # Only explicit false values disable dry-run
+                dry_run = False
+            else:
+                # Any unrecognized, ambiguous, or true-like value resolves to True (fail-safe)
+                dry_run = True
 
     # 3. Locate policy file
     policy_cfg = SecurityPolicyConfig()

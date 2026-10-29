@@ -61,40 +61,54 @@ jobs:
 
       - name: Determine Run Mode
         id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_BACKUP: ${{ inputs.backup }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           # If scheduled at 17:35 UTC (22:35 Tashkent), flag as backup run
           IS_BACKUP="false"
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "35 17 * * *" ]; then
+          if [ "$EVENT_NAME" = "schedule" ] && [ "$EVENT_SCHEDULE" = "35 17 * * *" ]; then
             IS_BACKUP="true"
-          elif [ "${{ inputs.backup }}" = "true" ]; then
+          elif [ "$INPUT_BACKUP" = "true" ]; then
             IS_BACKUP="true"
           fi
           echo "is_backup=${IS_BACKUP}" >> "$GITHUB_OUTPUT"
 
           DRY_RUN="true"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            DRY_RUN="${{ inputs.dry_run }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY_RUN="$INPUT_DRY_RUN"
           fi
           echo "dry_run=${DRY_RUN}" >> "$GITHUB_OUTPUT"
 
       - name: Execute DailyGreen Worker (Isolated Sandbox - No Write Tokens)
         env:
-          DAILYGREEN_ENABLED: "true"
+          DAILYGREEN_ENABLED: ${{ vars.DAILYGREEN_ENABLED || 'true' }}
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
           # Read-only GitHub token for issue discovery; zero write privileges in worker
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_REPO: ${{ inputs.repo }}
+          IS_BACKUP: ${{ steps.mode.outputs.is_backup }}
         run: |
-          BACKUP_FLAG=""
-          if [ "${{ steps.mode.outputs.is_backup }}" = "true" ]; then
-            BACKUP_FLAG="--backup"
+          ARGS=()
+          if [ "$IS_BACKUP" = "true" ]; then
+            ARGS+=(--backup)
           fi
 
-          REPO_FLAG=""
-          if [ -n "${{ inputs.repo }}" ]; then
-            REPO_FLAG="--repo ${{ inputs.repo }}"
+          if [ -n "$INPUT_REPO" ]; then
+            # Validate repository input format (must be owner/repo matching safe characters)
+            if echo "$INPUT_REPO" | grep -Eq '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$'; then
+              ARGS+=(--repo "$INPUT_REPO")
+            else
+              echo "::error::Invalid repository input format '$INPUT_REPO'. Expected 'owner/repo'."
+              exit 1
+            fi
           fi
 
-          python -m dailygreen.cli run $REPO_FLAG $BACKUP_FLAG --worker-only
+          ARGS+=(--worker-only)
+
+          python -m dailygreen.cli run "${ARGS[@]}"
 
       - name: Check Sealed Artifact
         id: check_artifact
@@ -145,7 +159,7 @@ jobs:
 
       - name: Deliver Verified PR (No Untrusted Repository Code Executed)
         env:
-          DAILYGREEN_ENABLED: "true"
+          DAILYGREEN_ENABLED: ${{ vars.DAILYGREEN_ENABLED || 'true' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m dailygreen.cli deliver --sealed-artifact .dailygreen/sealed_task.json
