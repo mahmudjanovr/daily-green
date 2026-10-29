@@ -1,0 +1,151 @@
+name: DailyGreen Maintenance Automation
+
+on:
+  schedule:
+    # Asia/Tashkent is UTC+5 (no Daylight Saving Time)
+    # Primary run: 22:15 Asia/Tashkent = 17:15 UTC
+    - cron: '15 17 * * *'
+    # Backup check: 22:35 Asia/Tashkent = 17:35 UTC
+    - cron: '35 17 * * *'
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Specific authorized repository (e.g. owner/repo) or leave empty for all'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Run in dry-run simulation mode (true = no remote mutations)'
+        required: true
+        type: boolean
+        default: true
+      backup:
+        description: 'Force backup run logic (skips if primary run already succeeded today)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: dailygreen-execution
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    name: Evaluate & Verify Maintenance Task (Sandbox)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      has_task: ${{ steps.check_artifact.outputs.has_task }}
+      dry_run: ${{ steps.mode.outputs.dry_run }}
+
+    steps:
+      - name: Checkout DailyGreen Harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .[dev]
+
+      - name: Determine Run Mode
+        id: mode
+        run: |
+          # If scheduled at 17:35 UTC (22:35 Tashkent), flag as backup run
+          IS_BACKUP="false"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "35 17 * * *" ]; then
+            IS_BACKUP="true"
+          elif [ "${{ inputs.backup }}" = "true" ]; then
+            IS_BACKUP="true"
+          fi
+          echo "is_backup=${IS_BACKUP}" >> "$GITHUB_OUTPUT"
+
+          DRY_RUN="true"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DRY_RUN="${{ inputs.dry_run }}"
+          fi
+          echo "dry_run=${DRY_RUN}" >> "$GITHUB_OUTPUT"
+
+      - name: Execute DailyGreen Worker (Isolated Sandbox - No Write Tokens)
+        env:
+          DAILYGREEN_ENABLED: "true"
+          DRY_RUN: ${{ steps.mode.outputs.dry_run }}
+          # Read-only GitHub token for issue discovery; zero write privileges in worker
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BACKUP_FLAG=""
+          if [ "${{ steps.mode.outputs.is_backup }}" = "true" ]; then
+            BACKUP_FLAG="--backup"
+          fi
+
+          REPO_FLAG=""
+          if [ -n "${{ inputs.repo }}" ]; then
+            REPO_FLAG="--repo ${{ inputs.repo }}"
+          fi
+
+          python -m dailygreen.cli run $REPO_FLAG $BACKUP_FLAG --worker-only
+
+      - name: Check Sealed Artifact
+        id: check_artifact
+        run: |
+          if [ -f ".dailygreen/sealed_task.json" ]; then
+            echo "has_task=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_task=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload Sealed Task Artifact
+        if: steps.check_artifact.outputs.has_task == 'true'
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: dailygreen-sealed-artifact
+          path: .dailygreen/sealed_task.json
+          retention-days: 7
+
+  delivery:
+    name: Deliver Sealed Pull Request (Trusted Delivery)
+    needs: worker
+    if: needs.worker.outputs.has_task == 'true' && needs.worker.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout DailyGreen Harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Download Sealed Task Artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: dailygreen-sealed-artifact
+          path: .dailygreen/
+
+      - name: Deliver Verified PR (No Untrusted Repository Code Executed)
+        env:
+          DAILYGREEN_ENABLED: "true"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m dailygreen.cli deliver --sealed-artifact .dailygreen/sealed_task.json

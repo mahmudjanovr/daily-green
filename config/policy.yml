@@ -1,0 +1,42 @@
+
+max_diff_lines: 150
+max_tasks_per_run: 1
+block_workflows: true
+block_lockfiles: true
+require_secret_scan: true
+
+# Glob patterns strictly forbidden from being modified
+denied_paths:
+  - ".env*"
+  - "*.env"
+  - "*.key"
+  - "*.pem"
+  - "*.pfx"
+  - "*.cert"
+  - "*.p12"
+  - ".github/workflows/**"
+  - "package-lock.json"
+  - "poetry.lock"
+  - "Pipfile.lock"
+  - "pnpm-lock.yaml"
+  - "yarn.lock"
+  - "composer.lock"
+  - "Cargo.lock"
+  - "*.sh"
+  - "*.bat"
+  - "*.cmd"
+  - "*.exe"
+  - "*.bin"
+  - ".dailygreen/**"
+  - ".git/**"
+
+disallowed_extensions:
+  - ".exe"
+  - ".dll"
+  - ".so"
+  - ".sh"
+  - ".bat"
+  - ".cmd"
+  - ".bin"
+  - ".key"
+  - ".pem"
