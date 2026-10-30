@@ -237,3 +237,116 @@ def test_unclosed_fence_preserved_to_eof():
     assert changed is False
     assert formatted == doc
 
+
+# Task 1: List Items vs Indented Code Block Tests
+
+
+def test_list_item_with_blank_line_and_indented_continuation_paragraph():
+    """
+    CommonMark: Indented paragraph following a list item after a blank line is list prose, NOT code.
+    Trailing excess whitespace must be cleaned, while list structure is preserved.
+    """
+    doc = (
+        "* First list item\n"
+        "\n"
+        "    Continuation paragraph of first list item with excess whitespace   \n"
+    )
+    expected = (
+        "* First list item\n"
+        "\n"
+        "    Continuation paragraph of first list item with excess whitespace\n"
+    )
+    formatted, changed = format_markdown_content(doc)
+    assert changed is True
+    assert formatted == expected
+
+
+def test_nested_list_with_four_space_indents():
+    """
+    CommonMark: Nested lists indented by 4 spaces are list items, NOT code.
+    Excess whitespace should be stripped and hard breaks preserved.
+    """
+    doc = (
+        "* Top level item\n"
+        "    * Nested item with excess whitespace   \n"
+        "    * Nested item with hard break  \n"
+        "      Continuation of nested item.\n"
+    )
+    expected = (
+        "* Top level item\n"
+        "    * Nested item with excess whitespace\n"
+        "    * Nested item with hard break  \n"
+        "      Continuation of nested item.\n"
+    )
+    formatted, changed = format_markdown_content(doc)
+    assert changed is True
+    assert formatted == expected
+
+
+def test_list_item_containing_fenced_block():
+    """
+    CommonMark: A list item containing an indented fenced code block must preserve
+    the code block's internal whitespace verbatim, while formatting list prose.
+    """
+    doc = (
+        "* List item with code:\n"
+        "\n"
+        "    ```python\n"
+        "    def list_code():   \n"
+        "        val = 42\t\n"
+        "    ```\n"
+        "\n"
+        "    Prose continuation with excess space   \n"
+    )
+    expected = (
+        "* List item with code:\n"
+        "\n"
+        "    ```python\n"
+        "    def list_code():   \n"
+        "        val = 42\t\n"
+        "    ```\n"
+        "\n"
+        "    Prose continuation with excess space\n"
+    )
+    formatted, changed = format_markdown_content(doc)
+    assert changed is True
+    assert formatted == expected
+    assert "    def list_code():   \n" in formatted
+    assert "        val = 42\t\n" in formatted
+
+
+def test_real_indented_code_block_after_normal_paragraph():
+    """
+    CommonMark: 4-space indented block after a normal top-level paragraph (NOT in a list) is code.
+    Its trailing spaces and tabs must remain verbatim.
+    """
+    doc = (
+        "Normal top level prose paragraph.\n"
+        "\n"
+        "    def real_indented_code():   \n"
+        "        return True\t\n"
+        "\n"
+        "Following paragraph.\n"
+    )
+    formatted, changed = format_markdown_content(doc)
+    assert changed is False
+    assert formatted == doc
+    assert "    def real_indented_code():   \n" in formatted
+    assert "        return True\t\n" in formatted
+
+
+def test_hard_break_inside_list_item():
+    """
+    CommonMark: Two trailing spaces on a line inside a list item represent a hard break.
+    Must be preserved.
+    """
+    doc = (
+        "* Item first line with hard break  \n"
+        "  Item second line without break.\n"
+    )
+    formatted, changed = format_markdown_content(doc)
+    assert changed is False
+    assert formatted == doc
+    assert "* Item first line with hard break  \n" in formatted
+
+

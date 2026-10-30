@@ -14,7 +14,8 @@ class TaskEngineError(Exception):
     pass
 
 
-FENCE_PATTERN = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})(.*)$")
+FENCE_PATTERN = re.compile(r"^[ ]*(`{3,}|~{3,})(.*)$")
+LIST_MARKER_RE = re.compile(r"^[ ]{0,3}([-*+]|\d{1,9}[.)])[ \t]+(.*)$")
 
 
 def format_markdown_line(line: str) -> str:
@@ -42,7 +43,9 @@ def format_markdown_content(content: str) -> tuple[str, bool]:
     """
     Format markdown text preserving line endings, semantic hard breaks, and code block contents:
     - Code blocks fenced with ``` (triple backticks) or ~~~ (triple tildes) are preserved verbatim.
-    - Indented code blocks (4 spaces or tabs following blank line) are preserved verbatim.
+    - Top-level indented code blocks (4 spaces or tabs following blank line) are preserved verbatim.
+    - List items and list continuation paragraphs (even when indented by 4+ spaces after a blank line)
+      are handled as list content (prose), properly formatting trailing whitespace while preserving hard breaks.
     - Unclosed fences are preserved verbatim to EOF.
     - Outside code blocks, CommonMark hard breaks (two trailing spaces) are preserved,
       while ordinary trailing whitespace and blank lines are cleaned.
@@ -62,6 +65,7 @@ def format_markdown_content(content: str) -> tuple[str, bool]:
     fence_char = ""
     fence_len = 0
     in_indented_code = False
+    in_list = False
     prev_was_blank = True
 
     for line in lines:
@@ -69,14 +73,14 @@ def format_markdown_content(content: str) -> tuple[str, bool]:
             # Code block content: preserve completely verbatim
             cleaned_lines.append(line)
             # Check for closing fence matching opening fence character and length >= fence_len
-            close_pattern = rf"^[ ]{{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$"
+            close_pattern = rf"^[ ]*{re.escape(fence_char)}{{{fence_len},}}[ \t]*$"
             if re.match(close_pattern, line):
                 in_fence = False
                 fence_char = ""
                 fence_len = 0
             continue
 
-        # Check for fence opening: 0-3 spaces followed by 3+ backticks or tildes
+        # Check for fence opening (top-level or indented in list)
         fence_match = FENCE_PATTERN.match(line)
         if fence_match:
             f_chars = fence_match.group(1)
@@ -91,21 +95,37 @@ def format_markdown_content(content: str) -> tuple[str, bool]:
                 cleaned_lines.append(line.rstrip(" \t"))
                 continue
 
-        # Check for indented code block (4 spaces or tab after blank line or continuing)
-        is_indented_line = line.startswith("    ") or line.startswith("\t")
-        if (prev_was_blank and is_indented_line) or (in_indented_code and is_indented_line):
-            in_indented_code = True
-            cleaned_lines.append(line)
-            prev_was_blank = False
-            continue
-        elif not line.strip():
+        # Blank line
+        if not line.strip():
             in_indented_code = False
             prev_was_blank = True
             cleaned_lines.append("")
             continue
-        else:
-            in_indented_code = False
+
+        # If inside a list item, indented lines or continuation list items are list prose, NOT code
+        if in_list:
+            is_indented = line.startswith(" ") or line.startswith("\t")
+            is_new_list_item = bool(LIST_MARKER_RE.match(line))
+            if is_indented or is_new_list_item:
+                cleaned_lines.append(format_markdown_line(line))
+                prev_was_blank = False
+                continue
+            else:
+                # Top-level non-indented line that is not a list item ends the list
+                in_list = False
+
+        # Check for top-level indented code block (4 spaces or tab after blank line or continuing)
+        is_indented = line.startswith("    ") or line.startswith("\t")
+        if (prev_was_blank and is_indented) or (in_indented_code and is_indented):
+            in_indented_code = True
+            cleaned_lines.append(line)
             prev_was_blank = False
+            continue
+
+        in_indented_code = False
+        prev_was_blank = False
+        if LIST_MARKER_RE.match(line):
+            in_list = True
 
         # Normal prose line formatting
         cleaned_lines.append(format_markdown_line(line))
