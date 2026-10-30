@@ -82,7 +82,12 @@ class MockAIAdapter(AIAdapter):
                     k for k in repo_context.get("existing_files", {}).keys()
                     if k != f and P(k).name.lower() not in ("license", "license.md", "license.txt", ".gitignore")
                 ]
-                link_target = candidates[0] if candidates else "docs/guide.md"
+                if candidates:
+                    link_target = candidates[0]
+                elif P(f).name.lower() == "readme.md":
+                    link_target = "docs/guide.md"
+                else:
+                    link_target = "../README.md" if ("/" in f.replace("\\", "/")) else "README.md"
                 result[f] = existing.rstrip() + f"\n\nSee [Documentation Guide]({link_target}) for reference.\n"
             else:
                 result[f] = existing.rstrip() + "\n\nUpdated documentation section for improved clarity.\n"

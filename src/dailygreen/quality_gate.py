@@ -390,8 +390,8 @@ def validate_semantic_diff(
             "pyproject.toml", "cargo.toml", "cargo.lock"
         }
         task_context = f"{task.id} {task.title} {task.description} {' '.join(task.acceptance_criteria)}".lower()
-        if task.plan and task.plan.objective:
-            task_context += f" {task.plan.objective.lower()}"
+        if task.plan:
+            task_context += f" {task.plan.problem_statement} {task.plan.proposed_solution}".lower()
         for link_text, link_target in added_links:
             clean = link_target.split("#")[0].split("?")[0].replace("\\", "/").rstrip("/")
             clean_name = Path(clean).name.lower()
