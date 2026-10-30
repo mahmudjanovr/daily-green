@@ -105,3 +105,35 @@ def test_verification_rejects_symlink_marker(tmp_path: Path):
     except OSError:
         # If symlink creation not supported on unprivileged Windows, skip symlink creation
         pytest.skip("Symlink creation requires elevated permissions on this environment")
+
+
+def test_isolated_workspace_cleanup_aborts_on_unverified_ownership(tmp_path: Path):
+    """IsolatedWorkspace.cleanup() aborts without deleting files if marker signature is tampered."""
+    from dailygreen.config import RepoConfig
+    from dailygreen.repository_manager import IsolatedWorkspace
+
+    state_dir = tmp_path / "state"
+    repo_cfg = RepoConfig(name="test-org/tampered-repo", default_branch="main")
+
+    ws = IsolatedWorkspace(repo_config=repo_cfg, state_dir=state_dir)
+    ws_path = ws.__enter__()
+    assert (ws_path / MARKER_FILENAME).exists()
+
+    # Tamper with the marker file signature
+    marker_file = ws_path / MARKER_FILENAME
+    data = json.loads(marker_file.read_text(encoding="utf-8"))
+    data["signature"] = "forged_signature_0000000000000000000000000000"
+    marker_file.write_text(json.dumps(data), encoding="utf-8")
+
+    # Call cleanup
+    ws.cleanup()
+
+    # Because ownership verification failed, workspace path was preserved
+    assert ws.workspace_path is not None
+    assert (ws.workspace_path / MARKER_FILENAME).exists()
+
+    # Manual cleanup of tempdir for test cleanliness
+    if ws._temp_dir:
+        ws._temp_dir.cleanup()
+        ws._temp_dir = None
+        ws.workspace_path = None

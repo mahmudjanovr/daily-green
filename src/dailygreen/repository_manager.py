@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -18,6 +19,8 @@ from dailygreen.security import redact_secrets, safe_git_command
 
 MARKER_FILENAME = ".dailygreen_managed_workspace.json"
 SIGNING_KEY_FILENAME = ".signing_key"
+
+logger = logging.getLogger(__name__)
 
 
 class RepositoryManagerError(Exception):
@@ -336,6 +339,17 @@ class IsolatedWorkspace:
 
     def cleanup(self) -> None:
         if self.workspace_path:
+            if (self.workspace_path / MARKER_FILENAME).exists():
+                if not verify_managed_workspace_ownership(
+                    self.workspace_path,
+                    expected_repo=self.repo_config.name,
+                    state_dir=self.state_dir,
+                ):
+                    logger.error(
+                        f"Workspace ownership check failed for '{self.workspace_path}'. Aborting cleanup."
+                    )
+                    return
+
             target_nm = self.workspace_path / "node_modules"
             if target_nm.is_dir():
                 cache_dirs = {".astro", ".cache"}
