@@ -76,9 +76,14 @@ class MockAIAdapter(AIAdapter):
                 or any("link" in ac.lower() for ac in task.acceptance_criteria)
             )
             if is_link_task:
-                # Add a valid markdown link reference to an existing file in same folder
+                # Add a valid markdown link reference to an existing related file if available, avoiding self-links
                 from pathlib import Path as P
-                result[f] = existing.rstrip() + f"\n\nSee [Documentation Guide]({P(f).name}) for reference.\n"
+                candidates = [
+                    k for k in repo_context.get("existing_files", {}).keys()
+                    if k != f and P(k).name.lower() not in ("license", "license.md", "license.txt", ".gitignore")
+                ]
+                link_target = candidates[0] if candidates else "docs/guide.md"
+                result[f] = existing.rstrip() + f"\n\nSee [Documentation Guide]({link_target}) for reference.\n"
             else:
                 result[f] = existing.rstrip() + "\n\nUpdated documentation section for improved clarity.\n"
         return result

@@ -162,6 +162,10 @@ def verify_acceptance_criteria(
                         return False, [
                             f"Acceptance criteria failed: relative link target '{link_target}' in '{target}' does not exist on disk."
                         ]
+                    if resolved == target_p.resolve() or clean_target.lower() == target_p.name.lower():
+                        return False, [
+                            f"Acceptance criteria failed: self-referential link target '{link_target}' in '{target}' is not permitted."
+                        ]
         details.append("Acceptance verification: all relative markdown links point to existing files on disk.")
 
     # 5. Target files exist
@@ -183,6 +187,11 @@ def validate_semantic_diff(
     Validate that diff content semantically matches the task's stated objective:
     - Rejects comment-only or trivial/cosmetic changes for tasks requiring functional/documentation fixes.
     - Rejects documentation-link tasks if the diff does not modify or add links.
+    - Rejects self-referential links in link tasks.
+    - Rejects unrelated administrative file links in link tasks.
+    - Rejects modifications to code inside fenced blocks during formatting tasks.
+    - Rejects diffs that delete most of the file without explicit deletion intent.
+    - Rejects pointless whitespace-only changes in typo or link tasks.
     - Rejects typo tasks if the diff does not modify the specified typo.
     Returns (passed, rationale).
     """
@@ -205,15 +214,50 @@ def validate_semantic_diff(
     if not non_empty_added and not non_empty_removed:
         return False, "Diff contains no substantive added or removed lines (whitespace only)."
 
-    # 1. Comment-only detection
+    meta = task.metadata or {}
+    is_formatting_task = (
+        meta.get("format_type") == "whitespace_and_eof"
+        or "format" in task.id.lower()
+        or "format" in task.title.lower()
+        or "whitespace" in task.id.lower()
+    )
+
+    # 1. Whitespace-only change detection for non-formatting tasks
+    def normalize_syntax(s: str) -> str:
+        s = re.sub(r"\[\s+", "[", s)
+        s = re.sub(r"\s+\]", "]", s)
+        s = re.sub(r"\]\s+\(", "](", s)
+        s = re.sub(r"\(\s+", "(", s)
+        s = re.sub(r"\s+\)", ")", s)
+        return re.sub(r"\s+", " ", s).strip()
+
+    norm_added = [normalize_syntax(l) for l in non_empty_added if normalize_syntax(l)]
+    norm_removed = [normalize_syntax(l) for l in non_empty_removed if normalize_syntax(l)]
+
+    if norm_added == norm_removed and not is_formatting_task:
+        return False, (
+            f"Semantic quality gate rejected: Task '{task.id}' contains only cosmetic whitespace modifications "
+            "and does not perform substantive typo, link, or content corrections."
+        )
+
+    # 2. Comment-only detection
     def is_comment(line: str) -> bool:
         s = line.strip()
         if not s:
             return True
         if s.startswith("<!--") or s.endswith("-->") or (s.startswith("<!--") and s.endswith("-->")):
             return True
-        if s.startswith("#") and not re.match(r"^#+\s+\S+", s):  # Exclude markdown headers (# Header)
-            return True
+        is_code_or_config = any(
+            Path(t).suffix.lower() in (
+                ".py", ".sh", ".bash", ".yml", ".yaml", ".toml", ".ini", ".conf", ".rb", ".pl", ".txt"
+            )
+            for t in task.target_files
+        )
+        if s.startswith("#"):
+            if is_code_or_config:
+                return True
+            if not re.match(r"^#{1,6}\s+(?!comment|note|todo|deceptive|temp)\w+", s, re.IGNORECASE):
+                return True
         if s.startswith("//") or s.startswith("/*") or s.endswith("*/") or s.startswith("*"):
             return True
         return False
@@ -232,7 +276,52 @@ def validate_semantic_diff(
     if all_comments and not is_comment_intended:
         return False, "Patch is comment-only and introduces no substantive functional or documentation changes."
 
-    # 2. Link Task Objective Validation
+    # 3. Mass deletion detection
+    is_deletion_intended = any(
+        w in task.id.lower() or w in task.title.lower() or w in task.description.lower()
+        for w in ("delete", "remove", "prune", "cleanup", "truncate", "strip")
+    )
+    if not is_deletion_intended and len(non_empty_removed) >= 10:
+        original_lines = 0
+        for target in task.target_files:
+            target_p = workspace_dir / target
+            if target_p.exists() and target_p.is_file():
+                try:
+                    original_lines += len(target_p.read_text(encoding="utf-8", errors="replace").splitlines())
+                except Exception:
+                    pass
+        net_deleted = len(non_empty_removed) - len(non_empty_added)
+        if original_lines > 0 and (net_deleted / original_lines) > 0.5:
+            return False, (
+                f"Semantic quality gate rejected: Task '{task.id}' deletes most of the file content "
+                f"({net_deleted}/{original_lines} lines deleted, >50%) without explicit deletion intent."
+            )
+        elif len(non_empty_removed) >= 3 * max(1, len(non_empty_added)) and net_deleted >= 10:
+            return False, (
+                f"Semantic quality gate rejected: Task '{task.id}' deletes most of the file content "
+                f"({len(non_empty_removed)} deletions vs {len(non_empty_added)} additions) without explicit deletion intent."
+            )
+
+    # 4. Code fence preservation in formatting tasks
+    if is_formatting_task:
+        in_fence = False
+        fence_code_altered = False
+        for line in diff_text.splitlines():
+            if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+                continue
+            content = line[1:] if len(line) > 0 else ""
+            stripped = content.strip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = not in_fence
+                if line.startswith(("+", "-")):
+                    fence_code_altered = True
+            elif in_fence and line.startswith(("+", "-")):
+                fence_code_altered = True
+
+        if fence_code_altered:
+            return False, f"Semantic quality gate rejected: Formatting task '{task.id}' modified code inside a fenced code block."
+
+    # 5. Link Task Objective Validation
     is_link_task = (
         task.validation_strategy in ("deterministic_markdown_link_check", "markdown_link_verification", "link_check")
         or "link" in task.id.lower()
@@ -241,7 +330,9 @@ def validate_semantic_diff(
     )
 
     if is_link_task:
-        link_regex = re.compile(r"(\[[^\]]+\]\([^)]+\)|<https?://[^>]+>|href\s*=|\[[^\]]+\]:\s*\S+|`[^`]+`)")
+        link_regex = re.compile(
+            r"(\[[^\]]+\]\([^)]+\)|<https?://[^>]+>|<a\s+[^>]*href=|href\s*=\s*['\"][^'\"]+['\"]|\[[^\]]+\]:\s*\S+)"
+        )
         diff_combined = " ".join(non_empty_added + non_empty_removed)
         has_link_change = bool(link_regex.search(diff_combined)) or "](" in diff_combined
 
@@ -251,8 +342,68 @@ def validate_semantic_diff(
                 "(markdown links, link references, hrefs, or link replacements)."
             )
 
-    # 3. Typo Task Objective Validation
-    meta = task.metadata or {}
+        # Extract markdown links from added lines
+        link_md_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+        added_links: list[tuple[str, str]] = []
+        for line in non_empty_added:
+            for match in link_md_pattern.finditer(line):
+                added_links.append((match.group(1).strip(), match.group(2).strip()))
+
+        removed_links: list[tuple[str, str]] = []
+        for line in non_empty_removed:
+            for match in link_md_pattern.finditer(line):
+                removed_links.append((match.group(1).strip(), match.group(2).strip()))
+
+        if removed_links and not added_links:
+            return False, (
+                f"Semantic quality gate rejected: Task '{task.id}' is a documentation-link task, "
+                "but diff removes valid links without adding any valid replacement markdown links."
+            )
+
+        # Check for self-links
+        for link_text, link_target in added_links:
+            clean = link_target.split("#")[0].split("?")[0].replace("\\", "/").rstrip("/")
+            clean_name = Path(clean).name.lower()
+            for target_file in task.target_files:
+                target_name = Path(target_file).name.lower()
+                target_p = workspace_dir / target_file
+                is_self = False
+                if clean in ("", ".", "./", target_file, f"./{target_file}") or clean_name == target_name:
+                    is_self = True
+                elif target_p.exists() and clean:
+                    try:
+                        resolved = (target_p.parent / clean).resolve()
+                        if resolved == target_p.resolve():
+                            is_self = True
+                    except Exception:
+                        pass
+                if is_self:
+                    return False, (
+                        f"Semantic quality gate rejected: Task '{task.id}' links target file '{target_file}' to itself "
+                        f"(self-link '{link_target}'). Self-links are invalid link resolutions."
+                    )
+
+        # Check for unrelated administrative link targets
+        UNRELATED_LINK_TARGETS = {
+            "license", "license.md", "license.txt", "copying", "copying.txt",
+            ".gitignore", "package.json", "package-lock.json", "tsconfig.json",
+            "pyproject.toml", "cargo.toml", "cargo.lock"
+        }
+        task_context = f"{task.id} {task.title} {task.description} {' '.join(task.acceptance_criteria)}".lower()
+        if task.plan and task.plan.objective:
+            task_context += f" {task.plan.objective.lower()}"
+        for link_text, link_target in added_links:
+            clean = link_target.split("#")[0].split("?")[0].replace("\\", "/").rstrip("/")
+            clean_name = Path(clean).name.lower()
+            if clean_name in UNRELATED_LINK_TARGETS:
+                stem = Path(clean_name).stem.lower()
+                if stem not in task_context and clean_name not in task_context:
+                    return False, (
+                        f"Semantic quality gate rejected: Task '{task.id}' added unrelated link target '{link_target}'. "
+                        "Links to administrative/configuration files are unrelated to this task."
+                    )
+
+    # 6. Typo Task Objective Validation
     if meta.get("typo"):
         typo = meta["typo"].lower()
         replacement = meta.get("replacement", "").lower()
