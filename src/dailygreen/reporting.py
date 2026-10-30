@@ -1,4 +1,4 @@
-"""Structured JSON logging and GitHub Step Summary reporting."""
+"""Structured JSON logging and GitHub Step Summary reporting with Phase 2 observability."""
 
 import json
 import logging
@@ -47,7 +47,8 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
 
 def format_markdown_summary(report: RunReport) -> str:
     """
-    Format a GitHub Actions Job Step Summary in GitHub Flavored Markdown.
+    Format a comprehensive GitHub Actions Job Step Summary in GitHub Flavored Markdown
+    including evaluation scorecards, structured plan, validation results, and duration.
     """
     status_icon = "🟢" if report.status in (RunStatus.TASK_COMPLETED, RunStatus.PULL_REQUEST_CREATED, RunStatus.DRY_RUN_COMPLETED) else ("⚪" if report.status in (RunStatus.NO_TASK, RunStatus.SKIPPED) else "🔴")
 
@@ -70,10 +71,75 @@ def format_markdown_summary(report: RunReport) -> str:
 | **Task Title** | {task_title} |
 | **Branch** | `{branch_name}` |
 | **Pull Request** | {pr_link} |
+| **Execution Duration** | `{report.execution_duration_seconds}s` |
 
 ### Details
 {report.message}
+"""
 
+    # Multi-Task Queue Execution Summary
+    if report.queue_summary or (report.tasks and len(report.tasks) > 1):
+        qs = report.queue_summary
+        counts_line = f"**Queue Summary**: Queued: {qs.total_queued} | Completed: {qs.completed_count} | Failed: {qs.failed_count} | Skipped: {qs.skipped_count} | Retried: {qs.retried_count}" if qs else ""
+        summary += f"\n### Multi-Task Execution Queue\n{counts_line}\n\n"
+        summary += "| Task ID | Status | Worker | Attempts | Duration | Details / Failure |\n"
+        summary += "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+        for t in report.tasks:
+            t_status = t.status.value.upper()
+            w_id = t.worker_id or "—"
+            att = str(t.attempt_count)
+            dur = f"{t.duration_seconds:.2f}s" if t.duration_seconds else "0.0s"
+            fail = t.last_failure_reason or ("Passed" if t_status == "COMPLETED" else "—")
+            summary += f"| `{t.id}` | `{t_status}` | `{w_id}` | {att} | {dur} | {fail} |\n"
+
+    # Rejection Reason
+    if report.rejection_reason:
+        summary += f"\n### Rejection Reason\n> {report.rejection_reason}\n"
+
+    # Evaluation Breakdown
+    if report.evaluation:
+        ev = report.evaluation
+        ev_status = "PASSED" if ev.passed else "REJECTED"
+        summary += f"""
+### Intelligent Evaluation Scorecard (Score: {ev.overall_score}/10.0 - {ev_status})
+| Evaluation Dimension | Score | Rationale |
+| :--- | :--- | :--- |
+| **Relevance** | {ev.relevance.score}/10 | {ev.relevance.rationale} |
+| **Clarity & Completeness** | {ev.clarity_completeness.score}/10 | {ev.clarity_completeness.rationale} |
+| **Technical Feasibility** | {ev.technical_feasibility.score}/10 | {ev.technical_feasibility.rationale} |
+| **Expected Impact** | {ev.expected_impact.score}/10 | {ev.expected_impact.rationale} |
+| **Safety & Risk Tier** | {ev.risk_assessment.score}/10 | {ev.risk_assessment.rationale} |
+| **Complexity Boundedness** | {ev.estimated_complexity.score}/10 | {ev.estimated_complexity.rationale} |
+| **Permissions & Dependencies** | {ev.permissions_and_dependencies.score}/10 | {ev.permissions_and_dependencies.rationale} |
+"""
+
+    # Structured Task Plan
+    if report.plan:
+        pl = report.plan
+        steps_list = "\n".join(f"- {s}" for s in pl.implementation_steps)
+        summary += f"""
+### Structured Task Plan
+- **Problem Statement**: {pl.problem_statement}
+- **Proposed Solution**: {pl.proposed_solution}
+- **Expected Behavior**: {pl.expected_behavior}
+- **Implementation Steps**:
+{steps_list}
+"""
+
+    # Files Analyzed and Modified
+    if report.files_analyzed or report.files_modified:
+        summary += "\n### Files Scope\n"
+        if report.files_analyzed:
+            summary += f"- **Analyzed**: {', '.join(f'`{f}`' for f in report.files_analyzed)}\n"
+        if report.files_modified:
+            summary += f"- **Modified**: {', '.join(f'`{f}`' for f in report.files_modified)}\n"
+
+    # Validation Results
+    if report.quality_gate and report.quality_gate.validation_details:
+        val_list = "\n".join(f"- {d}" for d in report.quality_gate.validation_details)
+        summary += f"\n### Validation Gate Outcomes\n{val_list}\n"
+
+    summary += """
 ### GitHub Contribution Policy Notice
 - **Commit Contribution Eligibility**: GitHub counts commits towards the contribution graph only when they are merged into the repository's default branch (`main`) or `gh-pages`, and when the commit author's email matches a verified GitHub account email.
 - **Pull Request Eligibility**: Opening a PR will count towards your contribution profile only if PR activity tracking is enabled in your GitHub profile settings.

@@ -14,7 +14,7 @@ def test_remote_clone_header_formatting_and_environment(monkeypatch, tmp_path: P
     """Verify that remote cloning formats HTTP Basic Auth for GitHub and passes credentials via environment."""
     captured_calls = []
 
-    def mock_run(cmd, cwd=None, env=None, capture_output=None, check=None):
+    def mock_run(cmd, cwd=None, env=None, capture_output=None, check=None, *args, **kwargs):
         captured_calls.append({"cmd": cmd, "cwd": cwd, "env": env})
         # Simulate successful clone by creating .git directory in target
         (Path(cwd) / ".git").mkdir()
@@ -69,7 +69,7 @@ def test_remote_clone_without_token_disables_credential_helper(monkeypatch, tmp_
     """When cloning without a token, credential.helper is disabled and prompt is suppressed."""
     captured_calls = []
 
-    def mock_run(cmd, cwd=None, env=None, capture_output=None, check=None):
+    def mock_run(cmd, cwd=None, env=None, capture_output=None, check=None, *args, **kwargs):
         captured_calls.append({"cmd": cmd, "cwd": cwd, "env": env})
         (Path(cwd) / ".git").mkdir()
         return MagicMock(returncode=0)
@@ -151,7 +151,7 @@ def test_remote_clone_does_not_persist_token_in_workspace_git_config(tmp_path: P
 
 def test_remote_clone_failure_cleans_up_workspace(monkeypatch, tmp_path: Path):
     """Verify that a clone failure cleans up the temporary directory and raises RepositoryManagerError."""
-    def mock_run_fail(cmd, cwd=None, env=None, capture_output=None, check=None):
+    def mock_run_fail(cmd, cwd=None, env=None, capture_output=None, check=None, *args, **kwargs):
         raise subprocess.CalledProcessError(
             returncode=128,
             cmd=cmd,
@@ -180,7 +180,7 @@ def test_remote_clone_redacts_token_in_error_message(monkeypatch, tmp_path: Path
     token = "ghp_VerySensitiveLiveToken1234567890abcdef"
     token_b64 = base64.b64encode(f"x-access-token:{token}".encode()).decode()
 
-    def mock_run_fail_with_token(cmd, cwd=None, env=None, capture_output=None, check=None):
+    def mock_run_fail_with_token(cmd, cwd=None, env=None, capture_output=None, check=None, *args, **kwargs):
         raw_stderr = f"fatal: unable to access url: AUTHORIZATION: basic {token_b64} token: {token}".encode("utf-8")
         raise subprocess.CalledProcessError(returncode=128, cmd=cmd, stderr=raw_stderr)
 
@@ -215,3 +215,57 @@ def test_isolated_workspace_success_cleanup(tmp_path: Path):
 
     assert ws_created_path is not None
     assert not ws_created_path.exists()
+
+
+def test_isolated_dependencies_staging_and_cleanup(tmp_path: Path):
+    """
+    Verify that IsolatedWorkspace stages packages from source node_modules,
+    isolates .astro and .cache directories locally, never mutates source cache files,
+    and cleanly tears down without affecting the source directory.
+    """
+    source_dir = tmp_path / "source_repo"
+    source_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=str(source_dir), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=str(source_dir), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(source_dir), capture_output=True, check=True)
+    (source_dir / "README.md").write_text("# Test", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=str(source_dir), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=str(source_dir), capture_output=True, check=True)
+
+    # Create mock source node_modules with package and cache
+    source_nm = source_dir / "node_modules"
+    source_nm.mkdir()
+    (source_nm / "mock_pkg").mkdir()
+    (source_nm / "mock_pkg" / "index.js").write_text("module.exports = {};")
+    (source_nm / ".astro").mkdir()
+    source_astro_file = source_nm / ".astro" / "data-store.json"
+    source_astro_file.write_text('{"initial": true}')
+
+    mtime_before = source_astro_file.stat().st_mtime
+    content_before = source_astro_file.read_text()
+
+    repo_cfg = RepoConfig(name="test-org/staging-repo", default_branch="main", allowed_paths=["README.md"])
+
+    with IsolatedWorkspace(repo_config=repo_cfg, source_dir=source_dir) as ws:
+        ws_nm = ws / "node_modules"
+        assert ws_nm.is_dir()
+        # mock_pkg is accessible in workspace
+        assert (ws_nm / "mock_pkg" / "index.js").exists()
+
+        # .astro is an independent local directory in workspace
+        ws_astro = ws_nm / ".astro"
+        assert ws_astro.is_dir()
+        assert not (ws_astro / "data-store.json").exists()
+
+        # Simulate build tool writing into workspace .astro
+        (ws_astro / "data-store.json").write_text('{"mutated": true}')
+
+        # Verify source file was NOT mutated
+        assert source_astro_file.read_text() == content_before
+        assert source_astro_file.stat().st_mtime == mtime_before
+
+    # After exit, source directory must remain completely intact
+    assert (source_nm / "mock_pkg" / "index.js").exists()
+    assert source_astro_file.read_text() == content_before
+    assert source_astro_file.stat().st_mtime == mtime_before
+

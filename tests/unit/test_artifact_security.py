@@ -50,6 +50,7 @@ def test_artifact_unauthorized_repository_rejected(tmp_path: Path):
         "deliver",
         "--sealed-artifact", str(artifact_path),
         "--repos-config", str(repos_config),
+        "--state-dir", str(tmp_path / "state"),
         "--mock-github",
     ])
     assert result.exit_code == 1
@@ -86,6 +87,7 @@ def test_artifact_malformed_task_id_rejected(tmp_path: Path):
         "deliver",
         "--sealed-artifact", str(artifact_path),
         "--repos-config", str(repos_config),
+        "--state-dir", str(tmp_path / "state"),
         "--mock-github",
     ])
     assert result.exit_code == 1
@@ -122,6 +124,7 @@ def test_artifact_forbidden_target_path_rejected(tmp_path: Path):
         "deliver",
         "--sealed-artifact", str(artifact_path),
         "--repos-config", str(repos_config),
+        "--state-dir", str(tmp_path / "state"),
         "--mock-github",
     ])
     assert result.exit_code == 1
@@ -158,6 +161,7 @@ def test_artifact_tampered_diff_hash_rejected(tmp_path: Path):
         "deliver",
         "--sealed-artifact", str(artifact_path),
         "--repos-config", str(repos_config),
+        "--state-dir", str(tmp_path / "state"),
         "--mock-github",
     ])
     assert result.exit_code == 1
@@ -196,6 +200,7 @@ def test_artifact_diff_size_limit_exceeded_rejected(tmp_path: Path):
         "deliver",
         "--sealed-artifact", str(artifact_path),
         "--repos-config", str(repos_config),
+        "--state-dir", str(tmp_path / "state"),
         "--mock-github",
     ])
     assert result.exit_code == 1
@@ -232,6 +237,7 @@ def test_artifact_secret_detected_rejected(tmp_path: Path):
         "deliver",
         "--sealed-artifact", str(artifact_path),
         "--repos-config", str(repos_config),
+        "--state-dir", str(tmp_path / "state"),
         "--mock-github",
     ])
     assert result.exit_code == 1

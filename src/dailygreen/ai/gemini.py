@@ -3,11 +3,11 @@
 import json
 import os
 import re
-from typing import Any
+from typing import Any, Optional
 import httpx
-from dailygreen.ai.base import AIAdapter, AIAdapterError
+from dailygreen.ai.base import AIAdapter, AIAdapterError, AIAdapterTimeoutError
 from dailygreen.config import AIConfig
-from dailygreen.models import RiskLevel, Task, TaskSource
+from dailygreen.models import RiskLevel, Task, TaskPlan, TaskSource
 
 
 class GeminiAIAdapter(AIAdapter):
@@ -46,8 +46,17 @@ class GeminiAIAdapter(AIAdapter):
                 "parts": [{"text": system_instruction}]
             }
 
+        req_timeout = float(self.config.timeout_seconds)
+        httpx_timeout = httpx.Timeout(
+            timeout=req_timeout,
+            connect=min(10.0, req_timeout),
+            read=req_timeout,
+            write=min(10.0, req_timeout),
+            pool=5.0,
+        )
+
         try:
-            with httpx.Client(timeout=self.config.timeout_seconds) as client:
+            with httpx.Client(timeout=httpx_timeout) as client:
                 response = client.post(
                     url,
                     headers={"Content-Type": "application/json"},
@@ -69,7 +78,7 @@ class GeminiAIAdapter(AIAdapter):
 
                 return parts[0].get("text", "").strip()
         except httpx.TimeoutException as e:
-            raise AIAdapterError(f"Gemini API request timed out after {self.config.timeout_seconds}s") from e
+            raise AIAdapterTimeoutError(f"Gemini API request timed out after {self.config.timeout_seconds}s") from e
         except httpx.RequestError as e:
             raise AIAdapterError(f"Gemini network request failed: {e}") from e
         except json.JSONDecodeError as e:
@@ -129,10 +138,50 @@ class GeminiAIAdapter(AIAdapter):
         except Exception as e:
             raise AIAdapterError(f"Failed to parse Gemini task proposal response: {e}") from e
 
+    def create_plan(self, task: Task, repo_context: dict[str, Any]) -> Optional[TaskPlan]:
+        """Ask Gemini to generate a structured execution plan for complex tasks."""
+        system_prompt = (
+            "You are a software maintenance planning assistant. Generate a structured, verifiable task plan. "
+            "Respond ONLY with a JSON object matching this schema: "
+            "{\"problem_statement\": \"...\", \"evidence_and_affected_files\": [\"...\"], "
+            "\"proposed_solution\": \"...\", \"implementation_steps\": [\"...\"], "
+            "\"expected_behavior\": \"...\", \"tests_required\": [\"...\"], "
+            "\"risk_assessment\": \"...\", \"acceptance_criteria\": [\"...\"]}"
+        )
+
+        prompt = (
+            f"Task: {task.title}\n"
+            f"Description: {task.description}\n"
+            f"Rationale: {task.rationale}\n"
+            f"Target Files: {task.target_files}\n"
+            f"Existing Acceptance Criteria: {task.acceptance_criteria}\n\n"
+            "Return JSON plan object only."
+        )
+
+        try:
+            raw_text = self._call_gemini(prompt, system_instruction=system_prompt)
+            cleaned = re.sub(r"^```(?:json)?\s*", "", raw_text.strip())
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+            data = json.loads(cleaned)
+            return TaskPlan(
+                task_id=task.id,
+                problem_statement=str(data.get("problem_statement", task.description)),
+                evidence_and_affected_files=list(data.get("evidence_and_affected_files", task.target_files)),
+                proposed_solution=str(data.get("proposed_solution", task.rationale)),
+                implementation_steps=list(data.get("implementation_steps", ["1. Apply changes"])),
+                expected_behavior=str(data.get("expected_behavior", "Requirements satisfied")),
+                tests_required=list(data.get("tests_required", [task.validation_strategy])),
+                risk_assessment=str(data.get("risk_assessment", f"Risk level: {task.risk_level.value}")),
+                acceptance_criteria=list(data.get("acceptance_criteria", task.acceptance_criteria)),
+            )
+        except Exception:
+            return None
+
     def implement_task(self, task: Task, repo_context: dict[str, Any]) -> dict[str, str]:
         """Ask Gemini to generate updated file contents for the task."""
         system_prompt = (
             "You are a cautious code assistant. Apply the requested maintenance task accurately. "
+            "Generate focused, minimal changes that respect repository policies and protected paths. "
             "Respond ONLY with a JSON object containing a 'files' map of relative path to full updated content: "
             "{\"files\": {\"path/to/file.md\": \"full file content...\"}}"
         )
@@ -169,3 +218,17 @@ class GeminiAIAdapter(AIAdapter):
             "Do not fabricate details:\n\n" + diff[:3000]
         )
         return self._call_gemini(prompt)
+
+    def explain_changes(self, modified_files: dict[str, str], task: Task) -> dict[str, str]:
+        """Explain why each modified file was changed."""
+        explanations: dict[str, str] = {}
+        for f in modified_files:
+            prompt = (
+                f"In 1 sentence, explain why modifying '{f}' is necessary to resolve task '{task.title}':\n"
+                f"Task Description: {task.description}"
+            )
+            try:
+                explanations[f] = self._call_gemini(prompt)
+            except Exception:
+                explanations[f] = f"Modified '{f}' to fulfill requirements of '{task.title}'."
+        return explanations

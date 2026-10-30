@@ -69,6 +69,15 @@ def format_pr_body(
 
     ac_list = "\n".join(f"- [x] {ac}" for ac in task.acceptance_criteria)
 
+    plan_section = ""
+    if task.plan:
+        steps = "\n".join(f"- {s}" for s in task.plan.implementation_steps)
+        plan_section = f"\n### Implementation Plan\n- **Strategy**: {task.plan.proposed_solution}\n- **Steps**:\n{steps}\n"
+
+    evaluation_section = ""
+    if task.evaluation:
+        evaluation_section = f"\n### Task Evaluation Score\n- Composite Feasibility Score: **{task.evaluation.overall_score}/10.0** (PASSED)\n- Safety Assessment: {task.evaluation.risk_assessment.rationale}\n"
+
     body = f"""## DailyGreen Maintenance Summary
 
 ### Task
@@ -76,7 +85,7 @@ def format_pr_body(
 
 ### Rationale
 {task.rationale}
-
+{plan_section}{evaluation_section}
 ### Acceptance Criteria
 {ac_list}
 
@@ -120,6 +129,7 @@ def verify_patch_and_tree_integrity(workspace_dir: Path, quality_gate: QualityGa
                 cwd=str(workspace_dir),
                 capture_output=True,
                 text=True,
+                timeout=30,
             )
             current_base = res_base.stdout.strip()
             if current_base != quality_gate.base_commit_sha:
@@ -134,6 +144,7 @@ def verify_patch_and_tree_integrity(workspace_dir: Path, quality_gate: QualityGa
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
 
         # Verify exact tree SHA
@@ -144,6 +155,7 @@ def verify_patch_and_tree_integrity(workspace_dir: Path, quality_gate: QualityGa
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
             )
             current_tree = res_tree.stdout.strip()
             if current_tree != quality_gate.tree_sha:
@@ -159,6 +171,7 @@ def verify_patch_and_tree_integrity(workspace_dir: Path, quality_gate: QualityGa
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
         staged_hash = compute_patch_hash(res_diff.stdout)
         if quality_gate.patch_hash and staged_hash != quality_gate.patch_hash:
@@ -213,7 +226,25 @@ def deliver_pull_request(
                 contribution_status="SKIPPED",
             )
 
-    # 4b. Check if remote branch exists
+    # 4b. Check if branch_name already has an existing closed or merged PR
+    if hasattr(github_client, "get_pull_requests"):
+        try:
+            closed_prs = github_client.get_pull_requests(repo_config.name, state="closed", head_branch=branch_name)
+            if closed_prs:
+                pr = closed_prs[0]
+                is_merged = pr.get("merged_at") is not None or pr.get("merged") is True
+                state_desc = "merged" if is_merged else "closed"
+                return DeliveryResult(
+                    success=False,
+                    branch_name=branch_name,
+                    is_dry_run=dry_run,
+                    message=f"Task '{task.id}' is already represented by {state_desc} PR #{pr.get('number')}: {pr.get('html_url')}",
+                    contribution_status="SKIPPED",
+                )
+        except Exception:
+            pass
+
+    # 4c. Check if remote branch exists
     branch_already_exists = github_client.branch_exists(repo_config.name, branch_name)
 
     pr_title = f"[DailyGreen] {task.title}"
@@ -292,18 +323,21 @@ def deliver_pull_request(
                     cwd=str(workspace_dir),
                     capture_output=True,
                     check=True,
+                    timeout=30,
                 )
                 subprocess.run(
                     safe_git_command(["git", "add", "-A"]),
                     cwd=str(workspace_dir),
                     capture_output=True,
                     check=True,
+                    timeout=30,
                 )
                 subprocess.run(
                     safe_git_command(["git", "commit", "--no-verify", "-m", commit_msg]),
                     cwd=str(workspace_dir),
                     capture_output=True,
                     check=True,
+                    timeout=30,
                 )
                 # Verify committed commit tree matches sealed tree
                 if quality_gate.tree_sha:
@@ -313,6 +347,7 @@ def deliver_pull_request(
                         capture_output=True,
                         text=True,
                         check=True,
+                        timeout=30,
                     )
                     committed_tree = res_committed_tree.stdout.strip()
                     if committed_tree != quality_gate.tree_sha:

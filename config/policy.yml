@@ -1,6 +1,6 @@
 
 max_diff_lines: 150
-max_tasks_per_run: 1
+max_tasks_per_run: 10
 block_workflows: true
 block_lockfiles: true
 require_secret_scan: true

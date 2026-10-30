@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
 class ConfigurationError(Exception):
@@ -28,6 +28,12 @@ class RepoConfig(BaseModel):
     )
     max_diff_lines: int = Field(default=150, ge=1, le=500, description="Max changed lines per task")
     timeout_seconds: int = Field(default=300, ge=10, le=1800, description="Per-run execution timeout")
+    validation_timeout_seconds: Optional[int] = Field(
+        default=None,
+        ge=5,
+        le=1800,
+        description="Per-command validation timeout for test and lint commands (overrides timeout_seconds)",
+    )
     supported_task_types: list[str] = Field(
         default_factory=lambda: [
             "doc_links",
@@ -54,6 +60,12 @@ class RepoConfig(BaseModel):
     curated_tasks: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Curated local backlog items for this repository"
+    )
+    max_tasks_per_run: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=50,
+        description="Per-repo maximum tasks to process per run"
     )
 
     @field_validator("name")
@@ -94,10 +106,29 @@ class AIConfig(BaseModel):
     max_requests_per_run: int = Field(default=2, ge=1, le=10)
 
 
+class ExecutionConfig(BaseModel):
+    """Configuration for autonomous execution engine."""
+    max_tasks_per_run: int = Field(default=1, ge=1, le=50, description="Maximum tasks to execute per run")
+    max_workers: int = Field(default=1, ge=1, le=1, description="Maximum concurrent worker threads (strictly 1 in shared workspace)")
+    max_retries: int = Field(default=2, ge=0, le=5, description="Maximum retries for transient failures")
+    retry_backoff_factor: float = Field(default=1.0, ge=0.1, le=60.0, description="Exponential backoff factor in seconds")
+    task_timeout_seconds: int = Field(default=300, ge=10, le=1800, description="Per-task execution timeout")
+
+    @field_validator("max_workers")
+    @classmethod
+    def validate_max_workers(cls, v: int) -> int:
+        if v != 1:
+            raise ValueError(
+                f"Parallel worker execution is not supported in shared workspaces (max_workers={v}). "
+                "max_workers must be strictly 1."
+            )
+        return v
+
+
 class SecurityPolicyConfig(BaseModel):
     """Global security policy for all DailyGreen operations."""
     max_diff_lines: int = Field(default=150, ge=1, le=500)
-    max_tasks_per_run: int = Field(default=1, ge=1, le=5)
+    max_tasks_per_run: int = Field(default=10, ge=1, le=50)
     block_workflows: bool = Field(default=True, description="Strictly forbid editing .github/workflows")
     block_lockfiles: bool = Field(default=True, description="Strictly forbid editing package lockfiles")
     require_secret_scan: bool = Field(default=True, description="Must scan diff and changes for secrets")
@@ -142,6 +173,7 @@ class DailyGreenConfig(BaseModel):
     repos: list[RepoConfig] = Field(default_factory=list)
     policy: SecurityPolicyConfig = Field(default_factory=SecurityPolicyConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     state_dir: str = Field(default=".dailygreen")
 
     def get_repo(self, repo_name: str) -> Optional[RepoConfig]:
@@ -162,6 +194,10 @@ def load_config(
     policy_path: Optional[str | Path] = None,
     override_dry_run: Optional[bool] = None,
     override_allow_live_mutations: Optional[bool] = None,
+    override_max_tasks: Optional[int] = None,
+    override_max_workers: Optional[int] = None,
+    override_max_retries: Optional[int] = None,
+    override_state_dir: Optional[str | Path] = None,
 ) -> DailyGreenConfig:
     """
     Load configuration from YAML files and environment variables.
@@ -282,13 +318,79 @@ def load_config(
     # 5. AI Configuration
     ai_provider = os.getenv("DAILYGREEN_AI_PROVIDER", "mock")
     ai_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    ai_cfg = AIConfig(provider=ai_provider, model=ai_model)
-
-    return DailyGreenConfig(
-        enabled=enabled,
-        dry_run=dry_run,
-        allow_live_mutations=allow_live_mutations,
-        repos=repos_list,
-        policy=policy_cfg,
-        ai=ai_cfg,
+    raw_ai_timeout = 30
+    if os.getenv("DAILYGREEN_AI_TIMEOUT"):
+        try:
+            raw_ai_timeout = int(os.getenv("DAILYGREEN_AI_TIMEOUT", "30"))
+        except ValueError:
+            raw_ai_timeout = 30
+    ai_cfg = AIConfig(
+        provider=ai_provider,
+        model=ai_model,
+        timeout_seconds=max(5, min(120, raw_ai_timeout)),
     )
+
+    # 6. Execution Configuration
+    raw_max_tasks = override_max_tasks
+    if raw_max_tasks is None and os.getenv("DAILYGREEN_MAX_TASKS_PER_RUN"):
+        try:
+            raw_max_tasks = int(os.getenv("DAILYGREEN_MAX_TASKS_PER_RUN", "1"))
+        except ValueError:
+            raw_max_tasks = 1
+    max_tasks = raw_max_tasks if raw_max_tasks is not None else policy_cfg.max_tasks_per_run
+    # Bound to policy limit
+    max_tasks = min(max_tasks, policy_cfg.max_tasks_per_run)
+
+    raw_max_workers = override_max_workers
+    if raw_max_workers is None and os.getenv("DAILYGREEN_MAX_WORKERS"):
+        try:
+            raw_max_workers = int(os.getenv("DAILYGREEN_MAX_WORKERS", "1"))
+        except ValueError:
+            raw_max_workers = 1
+    max_workers = raw_max_workers if raw_max_workers is not None else 1
+
+    raw_max_retries = override_max_retries
+    if raw_max_retries is None and os.getenv("DAILYGREEN_MAX_RETRIES"):
+        try:
+            raw_max_retries = int(os.getenv("DAILYGREEN_MAX_RETRIES", "2"))
+        except ValueError:
+            raw_max_retries = 2
+    max_retries = raw_max_retries if raw_max_retries is not None else 2
+
+    raw_backoff = 1.0
+    if os.getenv("DAILYGREEN_RETRY_BACKOFF"):
+        try:
+            raw_backoff = float(os.getenv("DAILYGREEN_RETRY_BACKOFF", "1.0"))
+        except ValueError:
+            raw_backoff = 1.0
+
+    raw_timeout = 300
+    if os.getenv("DAILYGREEN_TASK_TIMEOUT"):
+        try:
+            raw_timeout = int(os.getenv("DAILYGREEN_TASK_TIMEOUT", "300"))
+        except ValueError:
+            raw_timeout = 300
+
+    effective_state_dir = str(override_state_dir or os.getenv("DAILYGREEN_STATE_DIR") or ".dailygreen")
+
+    try:
+        exec_cfg = ExecutionConfig(
+            max_tasks_per_run=max(1, max_tasks),
+            max_workers=max_workers,
+            max_retries=max(0, min(5, max_retries)),
+            retry_backoff_factor=max(0.1, min(60.0, raw_backoff)),
+            task_timeout_seconds=max(10, min(1800, raw_timeout)),
+        )
+
+        return DailyGreenConfig(
+            enabled=enabled,
+            dry_run=dry_run,
+            allow_live_mutations=allow_live_mutations,
+            repos=repos_list,
+            policy=policy_cfg,
+            ai=ai_cfg,
+            execution=exec_cfg,
+            state_dir=effective_state_dir,
+        )
+    except ValidationError as e:
+        raise ConfigurationError(f"Invalid execution configuration: {e}") from e

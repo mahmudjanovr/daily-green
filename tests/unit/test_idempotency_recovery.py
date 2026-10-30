@@ -205,3 +205,43 @@ def test_scenario_8_open_pr_already_exists_for_task(tmp_path: Path):
     assert res.success is False
     assert "already represented by open PR #15" in res.message
     assert res.contribution_status == "SKIPPED"
+
+
+def test_scenario_9_delivery_skips_when_branch_already_has_merged_or_closed_pr(tmp_path: Path):
+    """Scenario 9: Branch already has a merged or closed PR. Delivery skips safely without 422 error."""
+    repo_cfg = RepoConfig(name="test-org/test-repo")
+    policy = SecurityPolicyConfig()
+    diff = "@@ -1,1 +1,2 @@\n+line\n"
+    gate = QualityGateResult(passed=True, reason="ok", patch_hash=compute_patch_hash(diff))
+
+    branch_name = "dailygreen/2026-10-30-task-alpha"
+    client = MockGitHubClient(
+        pull_requests={
+            "test-org/test-repo": [
+                {
+                    "number": 22,
+                    "state": "closed",
+                    "merged_at": "2026-10-30T17:20:00Z",
+                    "title": "[DailyGreen] Task Alpha",
+                    "body": "PR body",
+                    "head": {"ref": branch_name},
+                    "html_url": "https://github.com/test-org/test-repo/pull/22",
+                }
+            ]
+        }
+    )
+
+    res = deliver_pull_request(
+        workspace_dir=tmp_path,
+        task=_dummy_task(task_id="task-alpha"),
+        quality_gate=gate,
+        diff_text=diff,
+        repo_config=repo_cfg,
+        policy=policy,
+        github_client=client,
+        dry_run=True,
+        date_str="2026-10-30",
+    )
+    assert res.success is False
+    assert "already represented by merged PR #22" in res.message
+    assert res.contribution_status == "SKIPPED"

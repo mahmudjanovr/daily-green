@@ -126,8 +126,13 @@ class GitHubClient:
             return res.get("object", {}).get("sha")
         return None
 
-    def get_open_pull_requests(self, repo: str, head_branch: Optional[str] = None) -> list[dict[str, Any]]:
-        params = {"state": "open"}
+    def get_pull_requests(
+        self,
+        repo: str,
+        state: str = "open",
+        head_branch: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        params = {"state": state}
         if head_branch:
             # GitHub expects head in owner:branch format or branch
             params["head"] = head_branch
@@ -135,6 +140,9 @@ class GitHubClient:
         if not res or not isinstance(res, list):
             return []
         return res
+
+    def get_open_pull_requests(self, repo: str, head_branch: Optional[str] = None) -> list[dict[str, Any]]:
+        return self.get_pull_requests(repo, state="open", head_branch=head_branch)
 
     def create_branch(self, repo: str, branch: str, sha: str) -> dict[str, Any]:
         payload = {"ref": f"refs/heads/{branch}", "sha": sha}
@@ -185,16 +193,16 @@ class GitHubClient:
         except GitHubAPIError as e:
             # Handle idempotent recovery: PR was already created remotely
             if e.status_code == 422 and "already exists" in (e.response_body or "").lower():
-                open_prs = self.get_open_pull_requests(repo, head_branch=head)
-                if open_prs:
-                    return open_prs[0]
+                existing_prs = self.get_pull_requests(repo, state="all", head_branch=head)
+                if existing_prs:
+                    return existing_prs[0]
             raise
         except Exception:
             # Check if PR actually succeeded remotely despite network timeout
             try:
-                open_prs = self.get_open_pull_requests(repo, head_branch=head)
-                if open_prs:
-                    return open_prs[0]
+                existing_prs = self.get_pull_requests(repo, state="all", head_branch=head)
+                if existing_prs:
+                    return existing_prs[0]
             except Exception:
                 pass
             raise
@@ -213,12 +221,24 @@ class MockGitHubClient(GitHubClient):
         rate_limit_error: bool = False,
         simulate_timeout_on_pr_create: bool = False,
         simulate_pr_already_exists: bool = False,
+        pull_requests: Optional[dict[str, list[dict[str, Any]]]] = None,
     ):
         super().__init__(token="mock-token")
         self.repositories = repositories
         self.labeled_issues = labeled_issues or {}
         self.existing_branches = existing_branches or {}
         self.open_prs = open_prs or {}
+        self.pull_requests = pull_requests or {}
+        if not self.pull_requests and self.open_prs:
+            self.pull_requests = {repo: list(prs) for repo, prs in self.open_prs.items()}
+        elif not self.open_prs and self.pull_requests:
+            self.open_prs = {
+                repo: [
+                    p for p in prs
+                    if p.get("state", "open") == "open" and not p.get("merged", False) and p.get("merged_at") is None
+                ]
+                for repo, prs in self.pull_requests.items()
+            }
         self.should_fail = should_fail
         self.rate_limit_error = rate_limit_error
         self.simulate_timeout_on_pr_create = simulate_timeout_on_pr_create
@@ -266,12 +286,45 @@ class MockGitHubClient(GitHubClient):
     def get_branch_ref(self, repo: str, branch: str) -> Optional[str]:
         return "mock_base_commit_sha_1234567890abcdef"
 
-    def get_open_pull_requests(self, repo: str, head_branch: Optional[str] = None) -> list[dict[str, Any]]:
-        prs = self.open_prs.get(repo, [])
+    def get_pull_requests(
+        self,
+        repo: str,
+        state: str = "open",
+        head_branch: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        if self.rate_limit_error:
+            raise GitHubAPIError("GitHub API rate limit exceeded", status_code=403)
+        if self.should_fail:
+            raise GitHubAPIError("Mock GitHub API error", status_code=500)
+
+        all_repo_prs = self.pull_requests.get(repo)
+        if all_repo_prs is None:
+            all_repo_prs = self.open_prs.get(repo, [])
+
+        if state == "all":
+            filtered = list(all_repo_prs)
+        elif state == "open":
+            filtered = [
+                p for p in all_repo_prs
+                if p.get("state", "open") == "open" and not p.get("merged", False) and p.get("merged_at") is None
+            ]
+        elif state == "closed":
+            filtered = [
+                p for p in all_repo_prs
+                if p.get("state") == "closed" or p.get("merged", False) or p.get("merged_at") is not None
+            ]
+        else:
+            filtered = [p for p in all_repo_prs if p.get("state", "open") == state]
+
         if head_branch:
-            # Check exact match or owner:branch format
-            return [p for p in prs if p.get("head", {}).get("ref") == head_branch or head_branch.endswith(p.get("head", {}).get("ref", ""))]
-        return prs
+            return [
+                p for p in filtered
+                if p.get("head", {}).get("ref") == head_branch or head_branch.endswith(p.get("head", {}).get("ref", ""))
+            ]
+        return filtered
+
+    def get_open_pull_requests(self, repo: str, head_branch: Optional[str] = None) -> list[dict[str, Any]]:
+        return self.get_pull_requests(repo, state="open", head_branch=head_branch)
 
     def create_branch(self, repo: str, branch: str, sha: str) -> dict[str, Any]:
         if self.should_fail:
@@ -348,16 +401,20 @@ class MockGitHubClient(GitHubClient):
             "head": {"ref": head},
             "base": {"ref": base},
             "html_url": f"https://github.com/{repo}/pull/{pr_number}",
+            "state": "open",
         }
 
         # Simulate timeout on PR create: PR was created on remote, but client received timeout
         if self.simulate_timeout_on_pr_create:
-            # Store in open_prs so recovery can find it
+            # Store in open_prs and pull_requests so recovery can find it
             if repo not in self.open_prs:
                 self.open_prs[repo] = []
             self.open_prs[repo].append(record)
-            # Try to recover by querying open_prs
-            existing = self.get_open_pull_requests(repo, head_branch=head)
+            if repo not in self.pull_requests:
+                self.pull_requests[repo] = []
+            self.pull_requests[repo].append(record)
+            # Try to recover by querying existing PRs
+            existing = self.get_pull_requests(repo, state="all", head_branch=head)
             if existing:
                 return existing[0]
             raise GitHubAPIError("Network timeout creating pull request", status_code=504)
@@ -366,4 +423,7 @@ class MockGitHubClient(GitHubClient):
         if repo not in self.open_prs:
             self.open_prs[repo] = []
         self.open_prs[repo].append(record)
+        if repo not in self.pull_requests:
+            self.pull_requests[repo] = []
+        self.pull_requests[repo].append(record)
         return record

@@ -1,10 +1,34 @@
 """State management, idempotency tracking, and circuit breaker for DailyGreen."""
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+
+
+def is_process_alive(pid: int) -> bool:
+    """Check if process with given PID is currently active in the OS."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        h_proc = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not h_proc:
+            return False
+        exit_code = ctypes.c_ulong()
+        ctypes.windll.kernel32.GetExitCodeProcess(h_proc, ctypes.byref(exit_code))
+        ctypes.windll.kernel32.CloseHandle(h_proc)
+        return exit_code.value == STILL_ACTIVE
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
 
 
 class StateManager:
@@ -52,6 +76,7 @@ class StateManager:
         """
         Attempt to acquire an active execution lease for a repository.
         Prevents concurrent runs from colliding or duplicating work.
+        Reclaims orphaned leases if holding process has terminated.
         """
         repo_key = repo.lower()
         now = time.time()
@@ -63,13 +88,19 @@ class StateManager:
             # Check if lease is active and held by a DIFFERENT run
             lease_time = current_lease.get("timestamp", 0)
             holding_run = current_lease.get("run_id")
+            holding_pid = current_lease.get("pid")
             if (now - lease_time < lease_timeout_seconds) and holding_run != run_id:
-                # Active lease held by another run
-                return False
+                # If holding PID is known and the holding process is dead, safely reclaim orphaned lease
+                if holding_pid and not is_process_alive(holding_pid):
+                    pass
+                else:
+                    # Active lease held by another living run
+                    return False
 
         # Acquire or renew lease
         self._state["active_leases"][repo_key] = {
             "run_id": run_id,
+            "pid": os.getpid(),
             "timestamp": now,
             "iso": datetime.now(timezone.utc).isoformat(),
         }
