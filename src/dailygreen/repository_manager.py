@@ -8,6 +8,7 @@ import logging
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 import uuid
@@ -31,6 +32,45 @@ class RepositoryManagerError(Exception):
 class WorkspaceOwnershipError(Exception):
     """Raised when workspace ownership cannot be verified as a DailyGreen-managed clone."""
     pass
+
+
+def _is_reparse_point_or_symlink(path: Path | str) -> bool:
+    """
+    Check if a path is a symbolic link or Windows reparse point (junction).
+    In Python <3.12 on Windows, Path.is_symlink() and os.path.islink() return False
+    for NTFS directory junctions. This helper checks FILE_ATTRIBUTE_REPARSE_POINT
+    via os.lstat() to reliably detect junctions and symlinks across platforms.
+    """
+    try:
+        p_str = str(path)
+        st = os.lstat(p_str)
+        if os.name == "nt" and hasattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT"):
+            attrs = getattr(st, "st_file_attributes", 0)
+            if attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                return True
+        return os.path.islink(p_str) or Path(p_str).is_symlink()
+    except Exception:
+        return False
+
+
+def _remove_reparse_point_or_symlink(path: Path | str) -> None:
+    """
+    Safely remove a symlink or Windows junction link without touching target contents.
+    On Windows, os.rmdir() removes directory junctions and directory symlinks without
+    touching target contents; os.unlink() removes file symlinks.
+    On POSIX, os.unlink() removes symlinks.
+    """
+    p_str = str(path)
+    try:
+        if os.name == "nt":
+            try:
+                os.rmdir(p_str)
+            except OSError:
+                os.unlink(p_str)
+        else:
+            os.unlink(p_str)
+    except Exception:
+        pass
 
 
 def get_or_create_signing_key(state_dir: Optional[Path | str] = None) -> bytes:
@@ -140,8 +180,8 @@ def verify_managed_workspace_ownership(
             return False
 
         marker_path = canonical_root / MARKER_FILENAME
-        # Refuse symlinks on marker file or path escape
-        if marker_path.is_symlink() or os.path.islink(str(marker_path)):
+        # Refuse symlinks or reparse points on marker file or path escape
+        if _is_reparse_point_or_symlink(marker_path):
             return False
 
         if not marker_path.is_file():
@@ -214,6 +254,7 @@ class IsolatedWorkspace:
         self.state_dir = Path(state_dir) if state_dir else None
         self._temp_dir: Optional[tempfile.TemporaryDirectory] = None
         self.workspace_path: Optional[Path] = None
+        self._setup_completed: bool = False
 
     def _stage_dependencies(self) -> None:
         """
@@ -331,6 +372,7 @@ class IsolatedWorkspace:
 
         # Write managed workspace marker confirming DailyGreen ownership authenticated with state signing key
         write_managed_workspace_marker(self.workspace_path, self.repo_config.name, state_dir=self.state_dir)
+        self._setup_completed = True
 
         return self.workspace_path
 
@@ -338,40 +380,74 @@ class IsolatedWorkspace:
         self.cleanup()
 
     def cleanup(self) -> None:
-        if self.workspace_path:
-            if (self.workspace_path / MARKER_FILENAME).exists():
-                if not verify_managed_workspace_ownership(
-                    self.workspace_path,
-                    expected_repo=self.repo_config.name,
-                    state_dir=self.state_dir,
-                ):
-                    logger.error(
-                        f"Workspace ownership check failed for '{self.workspace_path}'. Aborting cleanup."
-                    )
-                    return
-
-            target_nm = self.workspace_path / "node_modules"
-            if target_nm.is_dir():
-                cache_dirs = {".astro", ".cache"}
+        if not self.workspace_path:
+            if self._temp_dir:
                 try:
-                    for item in os.listdir(target_nm):
-                        p = target_nm / item
-                        if item in cache_dirs:
-                            try:
-                                shutil.rmtree(p)
-                            except Exception:
-                                pass
-                        else:
-                            try:
-                                if os.name == "nt":
-                                    os.rmdir(str(p))
-                                else:
-                                    os.unlink(str(p))
-                            except Exception:
-                                pass
-                    os.rmdir(str(target_nm))
+                    self._temp_dir.cleanup()
                 except Exception:
                     pass
+                self._temp_dir = None
+            return
+
+        marker_path = self.workspace_path / MARKER_FILENAME
+        if marker_path.exists():
+            if not verify_managed_workspace_ownership(
+                self.workspace_path,
+                expected_repo=self.repo_config.name,
+                state_dir=self.state_dir,
+            ):
+                logger.error(
+                    f"Workspace ownership check failed for '{self.workspace_path}'. Aborting cleanup."
+                )
+                return
+        else:
+            # Marker is missing: fail closed UNLESS this is a partially initialized
+            # TemporaryDirectory after clone/setup failure, where ownership is proven
+            # by the actual TemporaryDirectory instance and its exact resolved path.
+            is_partial_tempdir = (
+                not self._setup_completed
+                and self._temp_dir is not None
+                and isinstance(self._temp_dir, tempfile.TemporaryDirectory)
+                and bool(self._temp_dir.name)
+                and Path(self._temp_dir.name).resolve() == self.workspace_path.resolve()
+            )
+            if not is_partial_tempdir:
+                logger.error(
+                    f"Workspace ownership marker missing for '{self.workspace_path}'. Aborting cleanup."
+                )
+                return
+
+        target_nm = self.workspace_path / "node_modules"
+        if _is_reparse_point_or_symlink(target_nm):
+            # node_modules itself is a junction or symlink: remove the link only,
+            # never traverse or recursively delete the external target.
+            _remove_reparse_point_or_symlink(target_nm)
+        elif target_nm.is_dir():
+            cache_dirs = {".astro", ".cache"}
+            try:
+                for item in os.listdir(target_nm):
+                    p = target_nm / item
+                    if _is_reparse_point_or_symlink(p):
+                        # Staged vendor package junction/symlink or rogue symlinked cache dir:
+                        # remove the link only, never traverse or delete target files.
+                        _remove_reparse_point_or_symlink(p)
+                    elif item in cache_dirs:
+                        # Genuine local workspace cache directory
+                        try:
+                            shutil.rmtree(p)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            if p.is_dir():
+                                os.rmdir(str(p))
+                            else:
+                                os.unlink(str(p))
+                        except Exception:
+                            pass
+                os.rmdir(str(target_nm))
+            except Exception:
+                pass
 
         if self._temp_dir:
             try:
@@ -380,3 +456,4 @@ class IsolatedWorkspace:
                 pass
             self._temp_dir = None
             self.workspace_path = None
+            self._setup_completed = False

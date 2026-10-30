@@ -137,3 +137,257 @@ def test_isolated_workspace_cleanup_aborts_on_unverified_ownership(tmp_path: Pat
         ws._temp_dir.cleanup()
         ws._temp_dir = None
         ws.workspace_path = None
+
+
+def test_cleanup_fails_closed_on_missing_marker_during_normal_cleanup(tmp_path: Path):
+    """
+    IsolatedWorkspace.cleanup() must fail closed if marker is missing after normal initialization.
+    Workspace directory and user files must be preserved untouched.
+    """
+    from dailygreen.config import RepoConfig
+    from dailygreen.repository_manager import IsolatedWorkspace
+
+    state_dir = tmp_path / "state"
+    repo_cfg = RepoConfig(name="test-org/normal-repo", default_branch="main")
+
+    ws = IsolatedWorkspace(repo_config=repo_cfg, state_dir=state_dir)
+    ws_path = ws.__enter__()
+    assert ws_path.exists()
+    assert (ws_path / MARKER_FILENAME).exists()
+
+    # Create a user file in the workspace
+    user_file = ws_path / "work.txt"
+    user_file.write_text("precious user work", encoding="utf-8")
+
+    # Simulate marker being deleted during execution before cleanup
+    (ws_path / MARKER_FILENAME).unlink()
+
+    # Cleanup must abort and refuse to delete the workspace
+    ws.cleanup()
+
+    assert ws.workspace_path is not None
+    assert ws.workspace_path.exists()
+    assert user_file.exists()
+    assert user_file.read_text(encoding="utf-8") == "precious user work"
+
+    # Clean up tempdir manually for test hygiene
+    if ws._temp_dir:
+        ws._temp_dir.cleanup()
+        ws._temp_dir = None
+        ws.workspace_path = None
+
+
+def test_cleanup_succeeds_on_missing_marker_during_partial_initialization(monkeypatch, tmp_path: Path):
+    """
+    When clone/setup fails during __enter__ before marker creation, cleanup() must safely
+    remove the partially initialized TemporaryDirectory whose ownership is proven by the
+    TemporaryDirectory instance.
+    """
+    import subprocess
+    from dailygreen.config import RepoConfig
+    from dailygreen.repository_manager import IsolatedWorkspace, RepositoryManagerError
+
+    repo_cfg = RepoConfig(name="test-org/fail-repo", default_branch="main")
+    ws = IsolatedWorkspace(
+        repo_config=repo_cfg,
+        clone_url="https://github.com/test-org/fail.git",
+        token="dummy",
+    )
+
+    def mock_fail(cmd, cwd=None, env=None, capture_output=None, check=None, *args, **kwargs):
+        raise subprocess.CalledProcessError(returncode=128, cmd=cmd, stderr=b"fatal: clone failed")
+
+    monkeypatch.setattr(subprocess, "run", mock_fail)
+
+    with pytest.raises(RepositoryManagerError, match="Failed to clone remote repository"):
+        ws.__enter__()
+
+    # Directory was cleaned up safely and reference cleared
+    assert ws.workspace_path is None
+    assert ws._temp_dir is None
+
+
+def test_cleanup_fails_closed_on_corrupt_marker(tmp_path: Path):
+    """
+    IsolatedWorkspace.cleanup() must fail closed if the marker file is corrupted or unreadable.
+    Workspace directory and contents must remain preserved.
+    """
+    from dailygreen.config import RepoConfig
+    from dailygreen.repository_manager import IsolatedWorkspace
+
+    state_dir = tmp_path / "state"
+    repo_cfg = RepoConfig(name="test-org/corrupt-marker-repo", default_branch="main")
+
+    ws = IsolatedWorkspace(repo_config=repo_cfg, state_dir=state_dir)
+    ws_path = ws.__enter__()
+    assert ws_path.exists()
+    marker_path = ws_path / MARKER_FILENAME
+    assert marker_path.exists()
+
+    # Corrupt the marker file with invalid JSON syntax
+    marker_path.write_text("{corrupt: json syntax <<< invalid", encoding="utf-8")
+
+    canary = ws_path / "canary.txt"
+    canary.write_text("canary content", encoding="utf-8")
+
+    ws.cleanup()
+
+    # Must fail closed: workspace path and canary preserved
+    assert ws.workspace_path is not None
+    assert ws.workspace_path.exists()
+    assert canary.exists()
+    assert canary.read_text(encoding="utf-8") == "canary content"
+
+    # Manual cleanup for test hygiene
+    if ws._temp_dir:
+        ws._temp_dir.cleanup()
+        ws._temp_dir = None
+        ws.workspace_path = None
+
+
+def test_cleanup_fails_closed_on_missing_or_invalid_signing_key(tmp_path: Path):
+    """
+    IsolatedWorkspace.cleanup() must fail closed if the signing key is missing, truncated,
+    or does not match the key used to sign the workspace marker.
+    """
+    from dailygreen.config import RepoConfig
+    from dailygreen.repository_manager import IsolatedWorkspace
+
+    state_dir = tmp_path / "state"
+    repo_cfg = RepoConfig(name="test-org/key-mismatch-repo", default_branch="main")
+
+    ws = IsolatedWorkspace(repo_config=repo_cfg, state_dir=state_dir)
+    ws_path = ws.__enter__()
+    assert ws_path.exists()
+
+    canary = ws_path / "important.txt"
+    canary.write_text("must survive", encoding="utf-8")
+
+    # Invalidate the signing key in state_dir by overwriting it with truncated bytes
+    key_path = state_dir / SIGNING_KEY_FILENAME
+    assert key_path.exists()
+    key_path.write_bytes(b"short")  # Invalid: <16 bytes
+
+    ws.cleanup()
+
+    # Must fail closed because fresh key will not match marker signature
+    assert ws.workspace_path is not None
+    assert ws.workspace_path.exists()
+    assert canary.exists()
+    assert canary.read_text(encoding="utf-8") == "must survive"
+
+    # Manual cleanup for test hygiene
+    if ws._temp_dir:
+        ws._temp_dir.cleanup()
+        ws._temp_dir = None
+        ws.workspace_path = None
+
+
+def test_cleanup_preserves_external_target_when_node_modules_is_junction_or_symlink(tmp_path: Path):
+    """
+    If workspace/node_modules itself is a Windows junction or POSIX symlink pointing to an
+    external directory, cleanup() must remove the junction/symlink link without traversing
+    or modifying any files inside the external target directory.
+    """
+    import os
+    from dailygreen.config import RepoConfig
+    from dailygreen.repository_manager import IsolatedWorkspace
+
+    state_dir = tmp_path / "state"
+    ext_dir = tmp_path / "external_node_modules"
+    ext_dir.mkdir()
+    (ext_dir / "protected_pkg").mkdir()
+    (ext_dir / "protected_pkg" / "index.js").write_text("export const safe = true;", encoding="utf-8")
+    (ext_dir / ".astro").mkdir()
+    (ext_dir / ".astro" / "data-store.json").write_text('{"untouched": true}', encoding="utf-8")
+
+    repo_cfg = RepoConfig(name="test-org/nm-junction-repo", default_branch="main")
+    ws = IsolatedWorkspace(repo_config=repo_cfg, state_dir=state_dir)
+    ws_path = ws.__enter__()
+
+    # Create workspace node_modules as junction or symlink to external_node_modules
+    ws_nm = ws_path / "node_modules"
+    if os.name == "nt":
+        import _winapi
+        _winapi.CreateJunction(str(ext_dir.resolve()), str(ws_nm))
+    else:
+        try:
+            ws_nm.symlink_to(ext_dir.resolve())
+        except OSError:
+            pytest.skip("Symlink creation requires elevated permissions on this platform")
+
+    # Verify junction was created
+    assert ws_nm.exists()
+
+    ws.cleanup()
+
+    # External directory must remain completely intact and untouched!
+    assert ext_dir.exists()
+    assert (ext_dir / "protected_pkg" / "index.js").exists()
+    assert (ext_dir / "protected_pkg" / "index.js").read_text(encoding="utf-8") == "export const safe = true;"
+    assert (ext_dir / ".astro" / "data-store.json").exists()
+    assert (ext_dir / ".astro" / "data-store.json").read_text(encoding="utf-8") == '{"untouched": true}'
+
+    # The workspace itself was cleaned up
+    assert ws.workspace_path is None
+
+
+def test_cleanup_preserves_external_target_when_cache_dir_is_junction_or_symlink(tmp_path: Path):
+    """
+    If workspace/node_modules/.astro or .cache is a Windows junction or POSIX symlink pointing
+    to an external directory, cleanup() must remove the junction/symlink link without calling
+    shutil.rmtree on or traversing the external target directory.
+    """
+    import os
+    from dailygreen.config import RepoConfig
+    from dailygreen.repository_manager import IsolatedWorkspace
+
+    state_dir = tmp_path / "state"
+    ext_astro = tmp_path / "external_astro_cache"
+    ext_astro.mkdir()
+    ext_data = ext_astro / "critical_data.json"
+    ext_data.write_text('{"critical": true}', encoding="utf-8")
+
+    ext_cache = tmp_path / "external_cache"
+    ext_cache.mkdir()
+    ext_cache_file = ext_cache / "cache_store.bin"
+    ext_cache_file.write_bytes(b"do not delete me")
+
+    repo_cfg = RepoConfig(name="test-org/cache-junction-repo", default_branch="main")
+    ws = IsolatedWorkspace(repo_config=repo_cfg, state_dir=state_dir)
+    ws_path = ws.__enter__()
+
+    # Create normal workspace node_modules directory
+    ws_nm = ws_path / "node_modules"
+    ws_nm.mkdir(parents=True, exist_ok=True)
+
+    ws_astro = ws_nm / ".astro"
+    ws_cache = ws_nm / ".cache"
+
+    if os.name == "nt":
+        import _winapi
+        _winapi.CreateJunction(str(ext_astro.resolve()), str(ws_astro))
+        _winapi.CreateJunction(str(ext_cache.resolve()), str(ws_cache))
+    else:
+        try:
+            ws_astro.symlink_to(ext_astro.resolve())
+            ws_cache.symlink_to(ext_cache.resolve())
+        except OSError:
+            pytest.skip("Symlink creation requires elevated permissions on this platform")
+
+    assert ws_astro.exists()
+    assert ws_cache.exists()
+
+    ws.cleanup()
+
+    # Both external directories and their contents must be 100% untouched!
+    assert ext_astro.exists()
+    assert ext_data.exists()
+    assert ext_data.read_text(encoding="utf-8") == '{"critical": true}'
+
+    assert ext_cache.exists()
+    assert ext_cache_file.exists()
+    assert ext_cache_file.read_bytes() == b"do not delete me"
+
+    # Workspace directory was cleaned up
+    assert ws.workspace_path is None
