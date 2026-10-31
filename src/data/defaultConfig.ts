@@ -1,0 +1,158 @@
+import { DailyGreenConfig, VirtualFile } from '../types';
+
+export const DEFAULT_POLICY = {
+  max_diff_lines: 150,
+  max_tasks_per_run: 1,
+  block_workflows: true,
+  block_lockfiles: true,
+  require_secret_scan: true,
+  denied_paths: [
+    '.env*',
+    '*.env',
+    '*.key',
+    '*.pem',
+    '*.pfx',
+    '*.cert',
+    '*.p12',
+    '.github/workflows/**',
+    'package-lock.json',
+    'poetry.lock',
+    'Pipfile.lock',
+    'pnpm-lock.yaml',
+    'yarn.lock',
+    'composer.lock',
+    'Cargo.lock',
+    '*.sh',
+    '*.bat',
+    '*.cmd',
+    '*.exe',
+    '*.bin',
+    '.dailygreen/**',
+    '.git/**',
+  ],
+  disallowed_extensions: [
+    '.exe',
+    '.dll',
+    '.so',
+    '.sh',
+    '.bat',
+    '.cmd',
+    '.bin',
+    '.key',
+    '.pem',
+  ],
+};
+
+export const DEFAULT_CONFIG: DailyGreenConfig = {
+  enabled: true,
+  dry_run: true,
+  allow_live_mutations: false,
+  repos: [
+    {
+      name: 'example-org/astro-portfolio',
+      default_branch: 'main',
+      enabled: true,
+      max_diff_lines: 100,
+      timeout_seconds: 300,
+      allowed_paths: ['docs/**', 'README.md', 'src/content/blog/**'],
+      denied_paths: ['package.json', 'astro.config.mjs'],
+      supported_task_types: [
+        'doc_links',
+        'doc_formatting',
+        'doc_typos',
+        'curated_backlog',
+        'issue_task',
+      ],
+      allow_ai_tasks: false,
+      baseline_command: ['npm', 'run', 'build'],
+      test_commands: [['npm', 'run', 'build']],
+      lint_commands: [['npm', 'run', 'lint']],
+      curated_tasks: [
+        {
+          id: 'astro-readme-links',
+          title: 'Verify and fix relative docs links in Astro documentation',
+          description: 'Check for broken relative Markdown links in docs/ and README.md',
+          rationale: 'Ensures documentation navigation works smoothly for visitors',
+          acceptance_criteria: ['All relative links point to existing markdown files'],
+          risk_level: 'low',
+          validation_strategy: 'deterministic_markdown_link_check',
+          source: 'backlog',
+          target_files: ['README.md'],
+        },
+      ],
+    },
+    {
+      name: 'example-org/fastapi-service',
+      default_branch: 'main',
+      enabled: true,
+      max_diff_lines: 120,
+      timeout_seconds: 300,
+      allowed_paths: ['docs/**', 'README.md', '*.md'],
+      denied_paths: ['pyproject.toml', 'setup.py'],
+      supported_task_types: [
+        'doc_links',
+        'doc_formatting',
+        'doc_typos',
+        'curated_backlog',
+        'issue_task',
+      ],
+      allow_ai_tasks: false,
+      baseline_command: ['pytest', '-q'],
+      test_commands: [['pytest', '-q']],
+      lint_commands: [['flake8', 'docs/']],
+      curated_tasks: [
+        {
+          id: 'fastapi-doc-formatting',
+          title: 'Clean up trailing whitespace and ensure newline at EOF in docs',
+          description: 'Deterministic cleanup of trailing whitespace and missing newlines in documentation',
+          rationale: 'Keeps documentation clean according to markdown style guidelines',
+          acceptance_criteria: [
+            'No trailing whitespace at end of lines',
+            'Files terminate with single newline',
+          ],
+          risk_level: 'low',
+          validation_strategy: 'deterministic_format_check',
+          source: 'backlog',
+          target_files: ['README.md', 'docs/index.md'],
+        },
+      ],
+    },
+  ],
+  policy: DEFAULT_POLICY,
+  ai: {
+    provider: 'mock',
+    model: 'gemini-1.5-flash',
+    temperature: 0.2,
+    max_tokens: 2048,
+    timeout_seconds: 30,
+    max_requests_per_run: 2,
+  },
+  state_dir: '.dailygreen',
+};
+
+export const INITIAL_VIRTUAL_FILES: Record<string, VirtualFile[]> = {
+  'example-org/astro-portfolio': [
+    {
+      path: 'README.md',
+      content: `# Astro Portfolio\n\nWelcome to teh portfolio project.   \nSee [Getting Started Guide](docs/guide.md) or [Missing Tutorial](docs/missing-tutorial.md) for details.\n\nAll rights reserved.  `,
+    },
+    {
+      path: 'docs/guide.md',
+      content: `# Getting Started Guide\n\nFollow these steps to recieve notifications and setup seperate build pipelines.\nRefer to [Architecture](docs/architecture.md) for more.\n`,
+    },
+    {
+      path: 'docs/architecture.md',
+      content: `# Architecture Overview\n\nThis application is built with Astro and Tailwind CSS.\n`,
+    },
+  ],
+  'example-org/fastapi-service': [
+    {
+      path: 'README.md',
+      content: `# FastAPI Microservice\n\nHigh performance API service.    \nCheck [API Endpoints](docs/index.md) before refering to support.   `,
+    },
+    {
+      path: 'docs/index.md',
+      content: `# API Endpoints\n\n- GET /health: Health check probe   \n- POST /task: Queue worker task\n\nEnsure accomodate payload structure.\n`,
+    },
+  ],
+};

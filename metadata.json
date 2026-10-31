@@ -1,0 +1,8 @@
+{
+  "name": "DailyGreen",
+  "description": "Reliable, secure, and production-minded automated code maintenance and quality gate harness across authorized GitHub repositories.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
