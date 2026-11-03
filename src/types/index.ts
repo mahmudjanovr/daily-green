@@ -58,6 +58,23 @@ export interface SecurityCheckResult {
   details: string[];
 }
 
+export interface ASTAnalysisResult {
+  passed: boolean;
+  syntax_valid: boolean;
+  errors: string[];
+  disallowed_patterns_found: Array<{
+    file: string;
+    line: number;
+    rule: string;
+    message: string;
+  }>;
+  inspected_files: string[];
+  ast_hash?: string;
+  ast_structural_fingerprint?: string;
+  source_integrity_hash?: string;
+  ast_integrity_verified?: boolean;
+}
+
 export interface QualityGateResult {
   passed: boolean;
   reason: string;
@@ -65,6 +82,7 @@ export interface QualityGateResult {
   post_change_tests: CommandResult[];
   post_change_lints: CommandResult[];
   security_result?: SecurityCheckResult | null;
+  ast_result?: ASTAnalysisResult | null;
   patch_hash?: string | null;
   base_commit_sha?: string | null;
   tree_sha?: string | null;
@@ -95,6 +113,15 @@ export interface RunReport {
   is_backup_run: boolean;
 }
 
+export interface RepoScheduleConfig {
+  enabled: boolean;
+  time: string; // HH:MM e.g. "09:00"
+  timezone: string; // e.g. "Asia/Tashkent" or "UTC"
+  backup_run_window_utc: string; // default "17:35"
+  last_run_timestamp?: string;
+  next_run_timestamp?: string;
+}
+
 export interface RepoConfig {
   name: string;
   default_branch: string;
@@ -105,6 +132,8 @@ export interface RepoConfig {
   timeout_seconds: number;
   supported_task_types: string[];
   allow_ai_tasks: boolean;
+  clone_url?: string;
+  schedule?: RepoScheduleConfig;
   baseline_command?: string[] | null;
   test_commands: string[][];
   lint_commands: string[][];
@@ -237,3 +266,112 @@ export interface ApiErrorResponse {
   code: string;
   details?: Record<string, any>;
 }
+
+export interface ExecutionLease {
+  repo: string;
+  run_id: string;
+  acquired_at: string;
+  expires_at: string;
+  holder: string;
+}
+
+export interface SchedulerAuditItem {
+  id: string;
+  timestamp: string;
+  repo: string;
+  event: 'TICK' | 'TRIGGERED' | 'IDEMPOTENT_SKIP' | 'BACKUP_EVALUATED' | 'LEASE_ACQUIRED' | 'LEASE_DENIED' | 'LEASE_EXPIRED' | 'RECOVERY_RUN';
+  details: string;
+}
+
+export interface SchedulerStatusResponse {
+  daemon_running: boolean;
+  system_timezone: string;
+  current_time_tz: string;
+  current_time_utc: string;
+  active_leases: Record<string, ExecutionLease>;
+  schedules: Array<{
+    repo: string;
+    enabled: boolean;
+    scheduled_time: string;
+    timezone: string;
+    next_run_iso: string;
+    last_run_iso?: string;
+    is_backup_window: boolean;
+  }>;
+  audit_trail: SchedulerAuditItem[];
+}
+
+export interface GitDiffSummary {
+  files_changed: string[];
+  total_lines_added: number;
+  total_lines_deleted: number;
+  raw_diff: string;
+  branch_created?: string;
+}
+
+export interface DiscoveredRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+  description: string | null;
+  default_branch: string;
+  stars_count: number;
+  forks_count: number;
+  open_issues_count: number;
+  pushed_at: string;
+  updated_at: string;
+  monitored: boolean;
+  active?: boolean;
+  permissions?: {
+    admin: boolean;
+    maintain: boolean;
+    push: boolean;
+    triage: boolean;
+    pull: boolean;
+  };
+  health_score?: number;
+  last_inspected?: string;
+}
+
+export interface RepoInspectionResult {
+  repo: string;
+  default_branch: string;
+  visibility: 'public' | 'private';
+  html_url: string;
+  description: string | null;
+  pushed_at: string;
+  latest_commits: Array<{
+    sha: string;
+    message: string;
+    author: string;
+    date: string;
+  }>;
+  tree_summary: {
+    total_files: number;
+    file_types: Record<string, number>;
+    docs_count: number;
+    tests_count: number;
+    workflow_files: string[];
+  };
+  maintenance_status: {
+    health_score: number;
+    has_readme: boolean;
+    has_license: boolean;
+    has_contributing: boolean;
+    has_tests: boolean;
+    has_ci: boolean;
+    open_issues_count: number;
+    stale_days: number;
+    recommendations: string[];
+    detected_issues: Array<{
+      category: 'security' | 'documentation' | 'code_quality' | 'maintenance' | 'hygiene';
+      severity: 'low' | 'medium' | 'high';
+      title: string;
+      description: string;
+      suggested_action: string;
+    }>;
+  };
+}
+

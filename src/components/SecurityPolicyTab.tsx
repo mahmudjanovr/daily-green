@@ -8,6 +8,7 @@ import {
   Flame,
   CheckCircle2,
   AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import { DailyGreenConfig, SecurityPolicyConfig } from '../types';
 
@@ -71,7 +72,7 @@ export const SecurityPolicyTab: React.FC<SecurityPolicyTabProps> = ({
         </div>
 
         {/* Security Invariants Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
             <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold mb-1">
               <ShieldCheck className="h-4 w-4" />
@@ -99,6 +100,16 @@ export const SecurityPolicyTab: React.FC<SecurityPolicyTabProps> = ({
             </div>
             <p className="text-[11px] text-slate-400 leading-snug">
               Every verified diff is sealed with a SHA-256 hash. Any alteration aborts delivery immediately.
+            </p>
+          </div>
+
+          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+            <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold mb-1">
+              <ShieldCheck className="h-4 w-4" />
+              <span>AST Semantic Gate</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              TypeScript Compiler API validates syntax and blocks <code className="text-slate-300">eval()</code>, <code className="text-slate-300">Function()</code>, and escapes.
             </p>
           </div>
         </div>
@@ -224,6 +235,42 @@ export const SecurityPolicyTab: React.FC<SecurityPolicyTabProps> = ({
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Gemini AI Safety & Boundary Configuration */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white">Gemini Intelligence Safety & Invariant Bounds</h3>
+          </div>
+          <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            gemini-3.8-flash
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+            <span className="text-slate-400 font-semibold block mb-1">Server-Side Key Isolation:</span>
+            <p className="text-slate-300 text-[11px] leading-snug">
+              Gemini API keys are maintained exclusively in server environment variables. Zero credentials are ever passed to React client bundles or browser localStorage.
+            </p>
+          </div>
+
+          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+            <span className="text-slate-400 font-semibold block mb-1">Mandatory AST & Safety Gate:</span>
+            <p className="text-slate-300 text-[11px] leading-snug">
+              AI proposals can never bypass Quality Gate verification. All generated diffs undergo TypeScript compiler AST analysis, secret scans, and test commands.
+            </p>
+          </div>
+
+          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+            <span className="text-slate-400 font-semibold block mb-1">No Autonomous Git Authorizations:</span>
+            <p className="text-slate-300 text-[11px] leading-snug">
+              AI is strictly prohibited from authorizing Git pushes or altering repository mutations policy. Live mutations remain fail-closed (<code className="text-slate-300">allow_live_mutations: false</code>).
+            </p>
           </div>
         </div>
       </div>

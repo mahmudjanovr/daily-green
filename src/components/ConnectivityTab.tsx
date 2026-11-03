@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Github,
   Lock,
+  Sparkles,
 } from 'lucide-react';
 import { DailyGreenConfig, BackendHealthResponse, BackendCapabilitiesResponse } from '../types';
 import { GitHubClient, LabeledIssue, RateLimitInfo, RepoDetails } from '../services/githubClient';
@@ -30,6 +31,8 @@ export const ConnectivityTab: React.FC<ConnectivityTabProps> = ({
   const [isMockMode, setIsMockMode] = useState(!githubToken);
   const [backendHealth, setBackendHealth] = useState<BackendHealthResponse | null>(null);
   const [backendCaps, setBackendCaps] = useState<BackendCapabilitiesResponse | null>(null);
+  const [aiStatus, setAiStatus] = useState<any | null>(null);
+  const [serverGitHubAuth, setServerGitHubAuth] = useState<any | null>(null);
   const [isBackendChecking, setIsBackendChecking] = useState(false);
 
   const loadBackendStatus = async () => {
@@ -41,6 +44,14 @@ export const ConnectivityTab: React.FC<ConnectivityTabProps> = ({
     const caps = await backendApiClient.getCapabilities();
     if (caps.success && caps.data) {
       setBackendCaps(caps.data);
+    }
+    const aiRes = await backendApiClient.getAIStatus();
+    if (aiRes.success && aiRes.data) {
+      setAiStatus(aiRes.data);
+    }
+    const ghRes = await backendApiClient.verifyGitHub();
+    if (ghRes.success && ghRes.data) {
+      setServerGitHubAuth(ghRes.data);
     }
     setIsBackendChecking(false);
   };
@@ -144,7 +155,7 @@ export const ConnectivityTab: React.FC<ConnectivityTabProps> = ({
           </div>
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800/80">
             <span className="text-[10px] text-slate-500 uppercase block font-sans">Node Environment</span>
-            <span className="text-slate-200 font-semibold">{backendHealth?.environment.node_version || process.version || 'v22.x'}</span>
+            <span className="text-slate-200 font-semibold">{backendHealth?.environment.node_version || 'v22.x'}</span>
           </div>
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800/80">
             <span className="text-[10px] text-slate-500 uppercase block font-sans">Python Host</span>
@@ -209,6 +220,203 @@ export const ConnectivityTab: React.FC<ConnectivityTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* Gemini AI Server Provider Status Card */}
+      {aiStatus && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-emerald-400" />
+              <h2 className="text-base font-bold text-white">Google Gemini Intelligence Provider</h2>
+            </div>
+            <span
+              className={`px-2.5 py-0.5 rounded text-xs font-mono font-semibold uppercase ${
+                aiStatus.configured
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              }`}
+            >
+              {aiStatus.configured ? 'Configured (Live API)' : 'Fallback (Deterministic)'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <span className="text-slate-500 block">Model Target</span>
+              <span className="font-mono font-bold text-slate-200">{aiStatus.model}</span>
+            </div>
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <span className="text-slate-500 block">API Key Storage</span>
+              <span className="font-semibold text-slate-200">Server Environment Only</span>
+            </div>
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <span className="text-slate-500 block">AI Operations Logged</span>
+              <span className="font-mono font-bold text-slate-200">{aiStatus.total_operations}</span>
+            </div>
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <span className="text-slate-500 block">Tokens Consumed</span>
+              <span className="font-mono font-bold text-slate-200">{aiStatus.total_tokens_consumed}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Server-Side GITHUB_TOKEN Verification Card */}
+      {serverGitHubAuth && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <Github className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  Server-Side GitHub Authentication
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    GITHUB_TOKEN
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Safe read-only verification of the server environment token.
+                </p>
+              </div>
+            </div>
+
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold uppercase border ${
+                serverGitHubAuth.authenticated
+                  ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300'
+                  : 'bg-rose-950/70 border-rose-500/40 text-rose-300'
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  serverGitHubAuth.authenticated ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
+                }`}
+              />
+              {serverGitHubAuth.authenticated ? 'AUTHENTICATED (Read-Only API)' : 'AUTH FAILED'}
+            </span>
+          </div>
+
+          {serverGitHubAuth.authenticated && serverGitHubAuth.account ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center gap-3">
+                  {serverGitHubAuth.account.avatar_url && (
+                    <img
+                      src={serverGitHubAuth.account.avatar_url}
+                      alt={serverGitHubAuth.account.login}
+                      className="w-8 h-8 rounded-full border border-slate-700 shrink-0"
+                    />
+                  )}
+                  <div className="truncate">
+                    <span className="text-slate-500 block text-[10px] uppercase font-mono">Account</span>
+                    <span className="font-bold text-white font-mono">{serverGitHubAuth.account.login}</span>
+                    {serverGitHubAuth.account.name && (
+                      <span className="text-[11px] text-slate-400 block truncate">
+                        {serverGitHubAuth.account.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <span className="text-slate-500 block text-[10px] uppercase font-mono">Rate Limit</span>
+                  <span className="font-bold text-emerald-400 font-mono text-sm">
+                    {serverGitHubAuth.rateLimit?.remaining} / {serverGitHubAuth.rateLimit?.limit}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Calls remaining</span>
+                </div>
+
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <span className="text-slate-500 block text-[10px] uppercase font-mono">Token Scopes</span>
+                  <span className="font-mono text-slate-200 block truncate">
+                    {serverGitHubAuth.scopes && serverGitHubAuth.scopes.length > 0
+                      ? serverGitHubAuth.scopes.join(', ')
+                      : 'Fine-Grained PAT'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Permissions</span>
+                </div>
+
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <span className="text-slate-500 block text-[10px] uppercase font-mono">Accessible Repos</span>
+                  <span className="font-bold text-emerald-400 font-mono text-sm">
+                    {serverGitHubAuth.accessibleRepositoryCount || 0}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Repositories accessible</span>
+                </div>
+              </div>
+
+              {/* Accessible Repositories List */}
+              {serverGitHubAuth.repositories && serverGitHubAuth.repositories.length > 0 && (
+                <div className="border border-slate-800 rounded-lg overflow-hidden text-xs">
+                  <div className="bg-slate-950 px-3 py-2 border-b border-slate-800 flex items-center justify-between">
+                    <span className="font-semibold text-slate-300">
+                      Accessible GitHub Repositories ({serverGitHubAuth.repositories.length})
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">Read-Only Inspected</span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-800/50">
+                    {serverGitHubAuth.repositories.map((repo: any) => {
+                      const isTarget = repo.full_name.toLowerCase().includes('daily-green');
+                      return (
+                        <div
+                          key={repo.full_name}
+                          className={`px-3 py-2 flex items-center justify-between gap-3 ${
+                            isTarget ? 'bg-emerald-950/20' : 'hover:bg-slate-800/20'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-medium text-slate-200">{repo.full_name}</span>
+                            <span
+                              className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                                repo.private
+                                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}
+                            >
+                              {repo.private ? 'PRIVATE' : 'PUBLIC'}
+                            </span>
+                            {isTarget && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                TARGET REPO
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+                            {repo.permissions?.admin && (
+                              <span className="px-1 py-0.2 rounded bg-slate-800 text-slate-300">admin</span>
+                            )}
+                            {repo.permissions?.push && (
+                              <span className="px-1 py-0.2 rounded bg-slate-800 text-emerald-400">push</span>
+                            )}
+                            {repo.permissions?.pull && (
+                              <span className="px-1 py-0.2 rounded bg-slate-800 text-slate-300">pull</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 bg-emerald-950/20 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                <span>
+                  Credential Isolation Intact: Token exists strictly in server memory. Zero browser localStorage persistence. Mutations strictly blocked (<code className="text-emerald-400">dry_run=true</code>).
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-lg text-xs text-rose-300">
+              <span className="font-semibold block">Authentication Check Notice:</span>
+              <span>{serverGitHubAuth.error || 'Unable to authenticate with provided server token.'}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Configuration & Token Input */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">

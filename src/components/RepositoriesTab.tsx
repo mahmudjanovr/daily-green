@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DailyGreenConfig, RepoConfig } from '../types';
 import { validateRepoConfig } from '../validation/configValidator';
+import { backendApiClient } from '../services/backendApi';
 
 interface RepositoriesTabProps {
   config: DailyGreenConfig;
@@ -235,6 +236,87 @@ export const RepositoriesTab: React.FC<RepositoriesTabProps> = ({
                     }
                     className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 font-mono"
                   />
+                </div>
+              </div>
+
+              {/* Autonomous Daily Schedule Configuration */}
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-emerald-400" />
+                    <h4 className="text-xs font-bold text-slate-200">
+                      Autonomous Daily Schedule (Phase 3 Engine)
+                    </h4>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <span className="text-[11px] text-slate-400">Schedule Active</span>
+                    <input
+                      type="checkbox"
+                      checked={selectedRepo.schedule?.enabled ?? true}
+                      onChange={(e) => {
+                        const sched = {
+                          enabled: e.target.checked,
+                          time: selectedRepo.schedule?.time || '09:00',
+                          timezone: selectedRepo.schedule?.timezone || 'Asia/Tashkent',
+                          backup_run_window_utc: '17:35',
+                        };
+                        onUpdateRepo({ ...selectedRepo, schedule: sched });
+                        backendApiClient.updateRepoSchedule(selectedRepo.name, sched);
+                      }}
+                      className="rounded bg-slate-900 border-slate-700 text-emerald-500 focus:ring-0"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Execution Slot (HH:MM):</label>
+                    <input
+                      type="text"
+                      value={selectedRepo.schedule?.time || '09:00'}
+                      onChange={(e) => {
+                        const sched = {
+                          enabled: selectedRepo.schedule?.enabled ?? true,
+                          time: e.target.value,
+                          timezone: selectedRepo.schedule?.timezone || 'Asia/Tashkent',
+                          backup_run_window_utc: '17:35',
+                        };
+                        onUpdateRepo({ ...selectedRepo, schedule: sched });
+                        backendApiClient.updateRepoSchedule(selectedRepo.name, sched);
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1.5 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Timezone Target:</label>
+                    <select
+                      value={selectedRepo.schedule?.timezone || 'Asia/Tashkent'}
+                      onChange={(e) => {
+                        const sched = {
+                          enabled: selectedRepo.schedule?.enabled ?? true,
+                          time: selectedRepo.schedule?.time || '09:00',
+                          timezone: e.target.value,
+                          backup_run_window_utc: '17:35',
+                        };
+                        onUpdateRepo({ ...selectedRepo, schedule: sched });
+                        backendApiClient.updateRepoSchedule(selectedRepo.name, sched);
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1.5 font-mono"
+                    >
+                      <option value="Asia/Tashkent">Asia/Tashkent (UTC+5)</option>
+                      <option value="UTC">UTC (Universal)</option>
+                      <option value="America/New_York">America/New_York (EST/EDT)</option>
+                      <option value="Europe/London">Europe/London (GMT/BST)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Backup Slot Window:</label>
+                    <div className="w-full bg-slate-900/60 border border-slate-800 text-amber-400 text-xs rounded px-2.5 py-1.5 font-mono">
+                      17:35 UTC (Idempotent)
+                    </div>
+                  </div>
                 </div>
               </div>
 

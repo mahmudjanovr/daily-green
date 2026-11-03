@@ -9,7 +9,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
-import { RunReport, ServerRunRecord } from '../types';
+import { DailyGreenConfig, RunReport, ServerRunRecord } from '../types';
+import { DEFAULT_CONFIG } from '../data/defaultConfig';
 
 export const SERVER_SCHEMA_VERSION = 2;
 
@@ -266,6 +267,54 @@ export class ServerPersistence {
   public async getRunById(id: string): Promise<ServerRunRecord | null> {
     const state = await this.loadState();
     return state.runs.find((r) => r.id === id) || null;
+  }
+
+  /**
+   * Retrieves current server state (alias for loadState).
+   */
+  public async getState(): Promise<ServerStateSchema> {
+    return this.loadState();
+  }
+
+  /**
+   * Saves updated server state atomically.
+   */
+  public async saveState(state: ServerStateSchema): Promise<void> {
+    await this.withLock(async (current) => {
+      Object.assign(current, state);
+    });
+  }
+
+  /**
+   * Retrieves persistent DailyGreen configuration or returns default configuration.
+   */
+  public async getConfig(): Promise<DailyGreenConfig> {
+    const configPath = path.join(this.stateDir, 'server_config.json');
+    try {
+      if (fs.existsSync(configPath)) {
+        const raw = await fs.promises.readFile(configPath, 'utf8');
+        return JSON.parse(raw);
+      }
+    } catch {
+      // Fallback
+    }
+    return DEFAULT_CONFIG;
+  }
+
+  /**
+   * Atomically saves persistent DailyGreen configuration.
+   */
+  public async saveConfig(config: DailyGreenConfig): Promise<void> {
+    const configPath = path.join(this.stateDir, 'server_config.json');
+    const tmpPath = `${configPath}.${Date.now()}.tmp`;
+    if (!fs.existsSync(this.stateDir)) {
+      await fs.promises.mkdir(this.stateDir, { recursive: true, mode: 0o700 });
+    }
+    await fs.promises.writeFile(tmpPath, JSON.stringify(config, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    await fs.promises.rename(tmpPath, configPath);
   }
 }
 

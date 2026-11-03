@@ -80,12 +80,63 @@ export const PipelineTab: React.FC<PipelineTabProps> = ({
 
   const selectedRepo = config.repos.find((r) => r.name === selectedRepoName) || config.repos[0];
 
+  const [schedulerStatus, setSchedulerStatus] = useState<any>(null);
+  const [aiPR, setAiPR] = useState<any | null>(null);
+  const [isGeneratingPR, setIsGeneratingPR] = useState(false);
+  const [copiedPR, setCopiedPR] = useState(false);
+
+  const fetchSchedulerStatus = React.useCallback(() => {
+    backendApiClient.getSchedulerStatus().then((res) => {
+      if (res.success && res.data) {
+        setSchedulerStatus(res.data);
+      }
+    });
+  }, []);
+
+  const handleGenerateAIPR = async () => {
+    const taskObj = discoveredTask || lastReport?.task;
+    if (!taskObj || !generatedDiff) return;
+
+    setIsGeneratingPR(true);
+    const res = await backendApiClient.generatePRDescriptionAI(taskObj, generatedDiff, qualityGateRes);
+    if (res.success && res.data) {
+      setAiPR(res.data);
+      addLog('Generated Pull Request description using Gemini AI.');
+    } else {
+      addLog('AI PR description generation fell back to deterministic template.');
+    }
+    setIsGeneratingPR(false);
+  };
+
   React.useEffect(() => {
     backendApiClient.getHealth().then((res) => {
       setBackendAvailable(res.connected);
       if (!res.connected) setUseBackend(false);
     });
-  }, []);
+    fetchSchedulerStatus();
+    const interval = setInterval(fetchSchedulerStatus, 15000);
+    return () => clearInterval(interval);
+  }, [fetchSchedulerStatus]);
+
+  const handleToggleScheduler = async () => {
+    const res = await backendApiClient.toggleScheduler();
+    if (res.success) {
+      setSchedulerStatus(res.data.status);
+      addLog(res.data.message);
+    }
+  };
+
+  const handleTriggerScheduled = async () => {
+    if (!selectedRepo) return;
+    addLog(`Manually dispatching scheduled autonomous run for "${selectedRepo.name}"...`);
+    const res = await backendApiClient.triggerScheduledRun(selectedRepo.name, false);
+    if (res.success && res.data?.run) {
+      addLog(`Autonomous run ${res.data.run.id} started with lease.`);
+      fetchSchedulerStatus();
+    } else {
+      addLog(`Scheduled trigger failed: ${res.error || 'Lease conflict'}`);
+    }
+  };
 
   const addLog = (msg: string) => {
     const timestamp = new Date().toISOString().substring(11, 19);
@@ -188,7 +239,7 @@ export const PipelineTab: React.FC<PipelineTabProps> = ({
             setSteps((prev) =>
               prev.map((s) => {
                 if (s.step < currentStep) return { ...s, status: 'success' };
-                if (s.step === currentStep) return { ...s, status: run.status === 'failed' ? 'error' : 'running' };
+                if (s.step === currentStep) return { ...s, status: run.status === 'failed' ? 'failed' : 'running' };
                 return { ...s, status: 'idle' };
               })
             );
@@ -262,6 +313,73 @@ export const PipelineTab: React.FC<PipelineTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Autonomous Background Scheduling Daemon Widget */}
+      {schedulerStatus && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={`h-3 w-3 rounded-full ${
+                  schedulerStatus.daemon_running ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
+                }`}
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">Autonomous Engine Daemon</h3>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
+                      schedulerStatus.daemon_running
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-slate-800 text-slate-400 border border-slate-700'
+                    }`}
+                  >
+                    {schedulerStatus.daemon_running ? 'Active Daemon' : 'Paused'}
+                  </span>
+                  {schedulerStatus.schedules?.some((s: any) => s.is_backup_window) && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      17:35 UTC Backup Window Active
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    Clock: <strong className="text-slate-200">{schedulerStatus.current_time_tz}</strong>
+                  </span>
+                  <span>
+                    UTC: <strong className="text-slate-300">{schedulerStatus.current_time_utc.slice(11, 19)}</strong>
+                  </span>
+                  <span>
+                    Lease:{' '}
+                    <strong className="text-slate-300">
+                      {Object.keys(schedulerStatus.active_leases || {}).length > 0
+                        ? `${Object.keys(schedulerStatus.active_leases)[0]} (Locked)`
+                        : 'Free (max_workers=1)'}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start md:self-auto">
+              <button
+                onClick={handleToggleScheduler}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-200 transition"
+              >
+                {schedulerStatus.daemon_running ? 'Pause Daemon' : 'Resume Daemon'}
+              </button>
+              <button
+                onClick={handleTriggerScheduled}
+                disabled={isExecuting}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 transition disabled:opacity-50"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                <span>Trigger Autonomous Slot</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Controls Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -624,6 +742,49 @@ export const PipelineTab: React.FC<PipelineTabProps> = ({
                   </div>
                 </div>
 
+                {/* AST Semantic Security Gate */}
+                <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-slate-400 font-semibold text-[11px]">AST Semantic Security Gate</span>
+                    <span
+                      className={`text-[11px] font-bold ${
+                        qualityGateRes.ast_result
+                          ? qualityGateRes.ast_result.passed
+                            ? 'text-emerald-400'
+                            : 'text-rose-400'
+                          : 'text-emerald-400'
+                      }`}
+                    >
+                      {qualityGateRes.ast_result
+                        ? qualityGateRes.ast_result.passed
+                          ? 'VERIFIED (TypeScript AST)'
+                          : 'AST VIOLATION'
+                        : 'PASSED (Clean AST)'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 space-y-0.5 font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-sans">Syntax Tree:</span>
+                      <span className="text-slate-300">
+                        {qualityGateRes.ast_result?.syntax_valid !== false ? 'Valid & Uncorrupted' : 'Syntax Error'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-sans">Forbidden Patterns:</span>
+                      <span className="text-slate-300">
+                        {(qualityGateRes.ast_result?.disallowed_patterns_found?.length || 0) === 0
+                          ? '0 (Clean: no eval/exec/proto)'
+                          : `${qualityGateRes.ast_result?.disallowed_patterns_found?.length} Disallowed`}
+                      </span>
+                    </div>
+                    {qualityGateRes.ast_result?.ast_hash && (
+                      <div className="text-[10px] text-slate-500 truncate pt-0.5">
+                        SHA-256 AST Hash: {qualityGateRes.ast_result.ast_hash.slice(0, 24)}...
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Path Allowlist Verification */}
                 <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
                   <span className="text-slate-500 block mb-1">Touched Files Path Validation</span>
@@ -700,6 +861,63 @@ export const PipelineTab: React.FC<PipelineTabProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Gemini AI Generated Pull Request Description */}
+          {generatedDiff && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white">Gemini AI Pull Request Assistant</h3>
+                </div>
+                <button
+                  onClick={handleGenerateAIPR}
+                  disabled={isGeneratingPR}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>{isGeneratingPR ? 'Generating...' : 'Generate AI PR Description'}</span>
+                </button>
+              </div>
+
+              {aiPR ? (
+                <div className="space-y-3">
+                  <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">
+                      Proposed PR Title:
+                    </span>
+                    <span className="font-mono text-emerald-400 font-bold text-xs">{aiPR.title}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 text-[10px] uppercase font-bold">
+                        Generated PR Description Markdown:
+                      </span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(aiPR.markdown_body);
+                          setCopiedPR(true);
+                          setTimeout(() => setCopiedPR(false), 2000);
+                        }}
+                        className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200"
+                      >
+                        <Copy className="h-3 w-3" />
+                        <span>{copiedPR ? 'Copied' : 'Copy PR Markdown'}</span>
+                      </button>
+                    </div>
+                    <pre className="font-mono text-[11px] text-slate-300 whitespace-pre-wrap max-h-56 overflow-y-auto leading-relaxed bg-slate-900/60 p-2.5 rounded border border-slate-800">
+                      {aiPR.markdown_body}
+                    </pre>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 italic">
+                  Click &apos;Generate AI PR Description&apos; to compose an enterprise-grade Pull Request description grounded in the verified diff and quality gate results.
+                </p>
+              )}
             </div>
           )}
         </div>

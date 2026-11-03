@@ -308,3 +308,42 @@ DailyGreen strictly adheres to GitHub's contribution accounting semantics:
 2. **Default Branch Requirement**: Commits on branches or Pull Requests **do not** register as green contribution squares until the Pull Request is merged into the default branch (`main`) or `gh-pages`.
 3. **Pull Request Activity**: Opening a Pull Request counts towards your contribution activity only if you have enabled **Include private contributions in your profile** or public PR activity in your GitHub profile settings.
 4. **Honest Reporting**: DailyGreen never reports a contribution as verified unless confirmed by GitHub. If status cannot be confirmed, it reports `UNKNOWN`.
+
+---
+
+## 11. Production Observability & SRE Metrics
+
+DailyGreen exposes standard HTTP monitoring endpoints:
+
+| Endpoint | Purpose | Format |
+| :--- | :--- | :--- |
+| `GET /api/health` | Liveness & Readiness probe (Node, Git, Python, Invariants) | JSON |
+| `GET /api/metrics` | SRE Observability (HTTP latencies p50/p95, memory, disk, scheduler ticks) | JSON |
+| `GET /api/logs` | Structured application logs with correlation IDs and levels | JSON |
+| `GET /api/backups` | Catalog of disaster recovery snapshots and SHA-256 seals | JSON |
+
+### SRE Alerting Thresholds
+- **Circuit Breaker Alert**: Trigger P2 alert if `circuit_tripped_repos` array is non-empty.
+- **Latency Spike**: Alert if `p95_latency_ms > 2000ms`.
+- **Rate Limiting Anomaly**: Alert if `client_error_4xx` rate exceeds 20% of total traffic.
+- **Disk Storage Footprint**: Alert if `.dailygreen-data` exceeds 5GB.
+
+---
+
+## 12. Disaster Recovery & Emergency Procedures
+
+### Immediate Kill Switch
+Toggle the UI **SYSTEM ENABLED** button to **DISABLED** or execute:
+```bash
+curl -X POST http://localhost:3000/api/policy -H "Content-Type: application/json" -d '{"enabled": false}'
+```
+
+### Creating Disaster Recovery Snapshot
+```bash
+./scripts/backup.sh "Emergency Pre-Maintenance Snapshot"
+```
+
+### Restoring State from Verified Backup
+```bash
+./scripts/restore.sh <backup-id>
+```

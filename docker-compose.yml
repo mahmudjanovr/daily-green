@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  dailygreen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dailygreen-production
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DRY_RUN=true
+      - ALLOW_LIVE_MUTATIONS=false
+      - MAX_WORKERS=1
+      - DAILYGREEN_TIMEZONE=Asia/Tashkent
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - dailygreen-storage:/app/.dailygreen-data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  dailygreen-storage:
+    name: dailygreen-storage
+    driver: local

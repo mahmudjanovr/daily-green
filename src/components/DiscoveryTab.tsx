@@ -13,6 +13,7 @@ import {
 import { DailyGreenConfig, Task, VirtualFile } from '../types';
 import { StateManager } from '../services/stateManager';
 import { discoverNextTask } from '../services/discovery';
+import { backendApiClient } from '../services/backendApi';
 
 interface DiscoveryTabProps {
   config: DailyGreenConfig;
@@ -34,6 +35,11 @@ export const DiscoveryTab: React.FC<DiscoveryTabProps> = ({
   const [candidate, setCandidate] = useState<Task | null>(null);
   const [hasDiscovered, setHasDiscovered] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [aiClassification, setAiClassification] = useState<any | null>(null);
+  const [isClassifying, setIsClassifying] = useState(false);
+  const [aiDocResult, setAiDocResult] = useState<any | null>(null);
+  const [isImprovingDoc, setIsImprovingDoc] = useState(false);
+  const [selectedDocPath, setSelectedDocPath] = useState<string>('README.md');
 
   const selectedRepo =
     config.repos.find((r) => r.name === selectedRepoName) || config.repos[0];
@@ -41,13 +47,44 @@ export const DiscoveryTab: React.FC<DiscoveryTabProps> = ({
   const handleRunDiscovery = () => {
     if (!selectedRepo) return;
     setIsScanning(true);
+    setAiClassification(null);
+    setAiDocResult(null);
     setTimeout(() => {
       const repoFiles = virtualFiles[selectedRepo.name] || [];
       const task = discoverNextTask(repoFiles, selectedRepo, config.policy, stateMgr);
       setCandidate(task);
       setHasDiscovered(true);
       setIsScanning(false);
+
+      if (task) {
+        // Automatically run Gemini task classification
+        setIsClassifying(true);
+        backendApiClient.classifyTaskAI(task.title, task.description).then((res) => {
+          if (res.success && res.data) {
+            setAiClassification(res.data);
+          }
+          setIsClassifying(false);
+        });
+      }
     }, 400);
+  };
+
+  const handleImproveDocumentation = async () => {
+    const repoFiles = virtualFiles[selectedRepo.name] || [];
+    const docFile = repoFiles.find((f) => f.path === selectedDocPath);
+    if (!docFile) return;
+
+    setIsImprovingDoc(true);
+    const res = await backendApiClient.improveDocAI(
+      docFile.path,
+      docFile.content,
+      'Clean up typography, fix grammar and broken markdown link syntax.'
+    );
+
+    if (res.success && res.data) {
+      setAiDocResult(res.data);
+    }
+    setIsImprovingDoc(false);
   };
 
   return (
@@ -208,6 +245,121 @@ export const DiscoveryTab: React.FC<DiscoveryTabProps> = ({
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Gemini AI Intelligence & Risk Assessment Panel */}
+              <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-emerald-400" />
+                    <h4 className="text-xs font-bold text-slate-200">
+                      Gemini Intelligence: Task Classification & Risk Assessment
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    Model: <code className="text-emerald-400">gemini-3.8-flash</code>
+                  </span>
+                </div>
+
+                {isClassifying ? (
+                  <div className="text-xs text-slate-400 italic flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span>Analyzing task risk and classification via Gemini AI...</span>
+                  </div>
+                ) : aiClassification ? (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-slate-400">
+                        Category: <strong className="text-slate-200 uppercase">{aiClassification.category}</strong>
+                      </span>
+                      <span className="text-slate-400">
+                        Risk Level:{' '}
+                        <strong
+                          className={
+                            aiClassification.risk_level === 'high'
+                              ? 'text-rose-400'
+                              : aiClassification.risk_level === 'medium'
+                              ? 'text-amber-400'
+                              : 'text-emerald-400'
+                          }
+                        >
+                          {aiClassification.risk_level.toUpperCase()}
+                        </strong>
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] bg-slate-900/80 p-2 rounded border border-slate-800">
+                      <strong className="text-slate-400 font-sans">Rationale:</strong> {aiClassification.rationale}
+                    </p>
+                    {aiClassification.recommended_criteria?.length > 0 && (
+                      <div>
+                        <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">
+                          AI Recommended Criteria:
+                        </span>
+                        <ul className="list-disc list-inside space-y-0.5 text-slate-400 text-[11px]">
+                          {aiClassification.recommended_criteria.map((c: string, idx: number) => (
+                            <li key={idx}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">
+                    AI classification ready.
+                  </p>
+                )}
+              </div>
+
+              {/* AI Documentation Review Tool */}
+              <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-emerald-400" />
+                    <h4 className="text-xs font-bold text-slate-200">
+                      AI Documentation Maintenance Review
+                    </h4>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedDocPath}
+                      onChange={(e) => setSelectedDocPath(e.target.value)}
+                      className="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded px-2 py-1 font-mono"
+                    >
+                      {(virtualFiles[selectedRepo.name] || [])
+                        .filter((f) => f.path.endsWith('.md'))
+                        .map((f) => (
+                          <option key={f.path} value={f.path}>
+                            {f.path}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={handleImproveDocumentation}
+                      disabled={isImprovingDoc}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-semibold border border-slate-700 flex items-center gap-1 transition"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      <span>{isImprovingDoc ? 'Reviewing...' : 'Review with Gemini'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {aiDocResult && (
+                  <div className="p-2.5 bg-slate-900/80 rounded border border-slate-800 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-emerald-400 text-[11px]">
+                        AI Improvement Summary:
+                      </span>
+                      <span className="text-slate-400 text-[10px]">
+                        Lines changed: {aiDocResult.lines_changed}
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px]">{aiDocResult.summary_of_changes}</p>
+                    <div className="border-t border-slate-800 pt-2 text-[10px] text-slate-500">
+                      Quality Gate Rule: AI documentation output undergoes AST validation and secret scanning before proposal.
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-3 bg-emerald-950/20 border border-emerald-500/20 rounded-lg text-xs text-emerald-300 flex items-center gap-2">

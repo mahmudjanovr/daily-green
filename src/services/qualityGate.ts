@@ -11,6 +11,7 @@ import {
   isPathAllowed,
   runSecurityChecks,
 } from './security';
+import { analyzeFilesAST } from './astAnalyzer';
 
 export async function evaluateQualityGate(
   task: Task,
@@ -82,6 +83,25 @@ export async function evaluateQualityGate(
     };
   }
 
+  // 4b. AST Analysis (TypeScript / JavaScript Syntax & Forbidden Pattern Inspection)
+  const astRes = analyzeFilesAST(fileContents);
+  if (!astRes.passed) {
+    const errorDetails = [
+      ...astRes.errors,
+      ...astRes.disallowed_patterns_found.map((p) => `${p.file}:${p.line} [${p.rule}] ${p.message}`),
+    ];
+    return {
+      passed: false,
+      reason: `AST security gate failed: ${errorDetails.join('; ')}`,
+      baseline_result: baselineResult,
+      post_change_tests: postChangeTests,
+      post_change_lints: postChangeLints,
+      security_result: securityRes,
+      ast_result: astRes,
+      changed_files: task.target_files,
+    };
+  }
+
   // 5. Post-change tests
   for (let idx = 0; idx < postChangeTests.length; idx++) {
     const t = postChangeTests[idx];
@@ -125,6 +145,7 @@ export async function evaluateQualityGate(
     post_change_tests: postChangeTests,
     post_change_lints: postChangeLints,
     security_result: securityRes,
+    ast_result: astRes,
     patch_hash: patchSeal,
     base_commit_sha: 'e4f9b2c3d8a176e49281a9540c11223344556677',
     tree_sha: fakeTreeSha.slice(0, 40),

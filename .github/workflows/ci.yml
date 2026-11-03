@@ -1,0 +1,56 @@
+name: DailyGreen CI & Verification Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint, Test & Production Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js v22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Host Python & Git CLI
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run TypeScript Static Type Analysis
+        run: npm run lint
+
+      - name: Execute Full Automated Test Suite (All 11 Suites)
+        run: npm test
+
+      - name: Execute Production Application Build
+        run: npm run build
+
+      - name: Verify Secret Hygiene & Clean Build
+        run: |
+          # Ensure no live tokens leaked into dist bundles
+          if grep -Eq 'ghp_[a-zA-Z0-9]{30,}|AIzaSy[a-zA-Z0-9_-]{33}' dist/assets/*.js 2>/dev/null; then
+            echo "::error::Credential leak detected in production bundle!"
+            exit 1
+          fi
+          echo "Secret hygiene verified: Clean dist bundle."

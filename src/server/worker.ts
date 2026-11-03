@@ -69,7 +69,8 @@ export async function executeSubprocess(
   command: string[],
   cwd: string,
   timeoutSeconds = 30,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  extraEnv?: NodeJS.ProcessEnv
 ): Promise<CommandResult> {
   const startTime = Date.now();
 
@@ -86,7 +87,10 @@ export async function executeSubprocess(
   }
 
   const [executable, ...args] = command;
-  const sanitizedEnv = getSanitizedEnvironment();
+  const sanitizedEnv = {
+    ...getSanitizedEnvironment(),
+    ...(extraEnv || {}),
+  };
 
   return new Promise<CommandResult>((resolve) => {
     let stdoutData = '';

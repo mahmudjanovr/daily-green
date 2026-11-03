@@ -1,0 +1,382 @@
+{
+  "metadata": {
+    "id": "dg-backup-2026-11-03T13-47-35-431Z",
+    "created_at": "2026-11-03T13:47:35.433Z",
+    "description": "Sprint 3 Production Baseline Snapshot",
+    "state_version": 2
+  },
+  "state": {
+    "schema_version": 2,
+    "completed_tasks": {},
+    "active_leases": {},
+    "consecutive_failures": {
+      "example-org/astro-portfolio": 3
+    },
+    "circuit_tripped": {
+      "example-org/astro-portfolio": true
+    },
+    "runs": [
+      {
+        "id": "dg-srv-1793708951714-9dfff4c7",
+        "repo": "example-org/astro-portfolio",
+        "status": "failed",
+        "current_stage": "Stage 2: Workspace & Baseline Quality Gate (Pre-tests)",
+        "start_time": "2026-11-03T12:29:11.715Z",
+        "logs": [
+          {
+            "id": "log-1793708951717-bynq",
+            "timestamp": "2026-11-03T12:29:11.717Z",
+            "level": "INFO",
+            "message": "Starting DailyGreen Server Run [dg-srv-1793708951714-9dfff4c7] for example-org/astro-portfolio"
+          },
+          {
+            "id": "log-1793708951718-b6t9",
+            "timestamp": "2026-11-03T12:29:11.718Z",
+            "level": "INFO",
+            "message": "Policy defaults: dry_run=true, allow_live_mutations=false, max_workers=1"
+          },
+          {
+            "id": "log-1793708951719-3pkh",
+            "timestamp": "2026-11-03T12:29:11.719Z",
+            "level": "INFO",
+            "message": "Creating isolated ephemeral workspace with cryptographic HMAC seal..."
+          },
+          {
+            "id": "log-1793708951721-ia3q",
+            "timestamp": "2026-11-03T12:29:11.721Z",
+            "level": "INFO",
+            "message": "Workspace initialized at /tmp/dailygreen_workspaces/dg-1793708951720-27b312346133 (HMAC verified)."
+          },
+          {
+            "id": "log-1793708951721-4ul8",
+            "timestamp": "2026-11-03T12:29:11.721Z",
+            "level": "INFO",
+            "message": "Running baseline pre-test in sanitized subprocess: npm run build"
+          },
+          {
+            "id": "log-1793708951843-axr2",
+            "timestamp": "2026-11-03T12:29:11.843Z",
+            "level": "ERROR",
+            "message": "Baseline pre-check FAILED: repository is already broken. Aborting pipeline."
+          }
+        ],
+        "cancellable": false,
+        "is_backup_run": false,
+        "dry_run": true,
+        "end_time": "2026-11-03T12:29:11.844Z",
+        "report": {
+          "run_id": "dg-srv-1793708951714-9dfff4c7",
+          "timestamp": "2026-11-03T12:29:11.844Z",
+          "repo": "example-org/astro-portfolio",
+          "status": "failed",
+          "message": "Baseline check failed before making any changes: npm error code ENOENT\nnpm error syscall open\nnpm error path /tmp/dailygreen_workspaces/dg-1793708951720-27b312346133/package.json\nnpm error errno -2\nnpm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/tmp/dailygreen_workspaces/dg-1793708951720-27b312346133/package.json'\nnpm error enoent This is related to npm not being able to find a file.\nnpm error enoent\nnpm error A complete log of this run can be found in: /root/.npm/_logs/2026-11-03T12_29_11_793Z-debug-0.log\n",
+          "is_backup_run": false
+        }
+      },
+      {
+        "id": "dg-srv-1793708943101-70d3b33e",
+        "repo": "example-org/astro-portfolio",
+        "status": "failed",
+        "current_stage": "Stage 2: Workspace & Baseline Quality Gate (Pre-tests)",
+        "start_time": "2026-11-03T12:29:03.101Z",
+        "logs": [
+          {
+            "id": "log-1793708943108-0yop",
+            "timestamp": "2026-11-03T12:29:03.108Z",
+            "level": "INFO",
+            "message": "Starting DailyGreen Server Run [dg-srv-1793708943101-70d3b33e] for example-org/astro-portfolio"
+          },
+          {
+            "id": "log-1793708943110-7c7f",
+            "timestamp": "2026-11-03T12:29:03.110Z",
+            "level": "INFO",
+            "message": "Policy defaults: dry_run=true, allow_live_mutations=false, max_workers=1"
+          },
+          {
+            "id": "log-1793708943112-iwg6",
+            "timestamp": "2026-11-03T12:29:03.112Z",
+            "level": "INFO",
+            "message": "Creating isolated ephemeral workspace with cryptographic HMAC seal..."
+          },
+          {
+            "id": "log-1793708943115-kjdq",
+            "timestamp": "2026-11-03T12:29:03.115Z",
+            "level": "INFO",
+            "message": "Workspace initialized at /tmp/dailygreen_workspaces/dg-1793708943113-a9975adb79c3 (HMAC verified)."
+          },
+          {
+            "id": "log-1793708943116-dg0m",
+            "timestamp": "2026-11-03T12:29:03.116Z",
+            "level": "INFO",
+            "message": "Running baseline pre-test in sanitized subprocess: npm run build"
+          },
+          {
+            "id": "log-1793708943241-g7ma",
+            "timestamp": "2026-11-03T12:29:03.241Z",
+            "level": "ERROR",
+            "message": "Baseline pre-check FAILED: repository is already broken. Aborting pipeline."
+          }
+        ],
+        "cancellable": false,
+        "is_backup_run": false,
+        "dry_run": true,
+        "end_time": "2026-11-03T12:29:03.244Z",
+        "report": {
+          "run_id": "dg-srv-1793708943101-70d3b33e",
+          "timestamp": "2026-11-03T12:29:03.244Z",
+          "repo": "example-org/astro-portfolio",
+          "status": "failed",
+          "message": "Baseline check failed before making any changes: npm error code ENOENT\nnpm error syscall open\nnpm error path /tmp/dailygreen_workspaces/dg-1793708943113-a9975adb79c3/package.json\nnpm error errno -2\nnpm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/tmp/dailygreen_workspaces/dg-1793708943113-a9975adb79c3/package.json'\nnpm error enoent This is related to npm not being able to find a file.\nnpm error enoent\nnpm error A complete log of this run can be found in: /root/.npm/_logs/2026-11-03T12_29_03_191Z-debug-0.log\n",
+          "is_backup_run": false
+        }
+      },
+      {
+        "id": "dg-srv-1793708374620-9dbe007c",
+        "repo": "example-org/astro-portfolio",
+        "status": "failed",
+        "current_stage": "Stage 2: Workspace & Baseline Quality Gate (Pre-tests)",
+        "start_time": "2026-11-03T12:19:34.620Z",
+        "logs": [
+          {
+            "id": "log-1793708374625-uz6j",
+            "timestamp": "2026-11-03T12:19:34.625Z",
+            "level": "INFO",
+            "message": "Starting DailyGreen Server Run [dg-srv-1793708374620-9dbe007c] for example-org/astro-portfolio"
+          },
+          {
+            "id": "log-1793708374627-quqc",
+            "timestamp": "2026-11-03T12:19:34.627Z",
+            "level": "INFO",
+            "message": "Policy defaults: dry_run=true, allow_live_mutations=false, max_workers=1"
+          },
+          {
+            "id": "log-1793708374629-z1i3",
+            "timestamp": "2026-11-03T12:19:34.629Z",
+            "level": "INFO",
+            "message": "Creating isolated ephemeral workspace with cryptographic HMAC seal..."
+          },
+          {
+            "id": "log-1793708374633-cm6b",
+            "timestamp": "2026-11-03T12:19:34.633Z",
+            "level": "INFO",
+            "message": "Workspace initialized at /tmp/dailygreen_workspaces/dg-1793708374631-192e7b387c31 (HMAC verified)."
+          },
+          {
+            "id": "log-1793708374634-zco8",
+            "timestamp": "2026-11-03T12:19:34.634Z",
+            "level": "INFO",
+            "message": "Running baseline pre-test in sanitized subprocess: npm run build"
+          },
+          {
+            "id": "log-1793708374753-wpnp",
+            "timestamp": "2026-11-03T12:19:34.753Z",
+            "level": "ERROR",
+            "message": "Baseline pre-check FAILED: repository is already broken. Aborting pipeline."
+          }
+        ],
+        "cancellable": false,
+        "is_backup_run": false,
+        "dry_run": true,
+        "end_time": "2026-11-03T12:19:34.755Z",
+        "report": {
+          "run_id": "dg-srv-1793708374620-9dbe007c",
+          "timestamp": "2026-11-03T12:19:34.755Z",
+          "repo": "example-org/astro-portfolio",
+          "status": "failed",
+          "message": "Baseline check failed before making any changes: npm error code ENOENT\nnpm error syscall open\nnpm error path /tmp/dailygreen_workspaces/dg-1793708374631-192e7b387c31/package.json\nnpm error errno -2\nnpm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/tmp/dailygreen_workspaces/dg-1793708374631-192e7b387c31/package.json'\nnpm error enoent This is related to npm not being able to find a file.\nnpm error enoent\nnpm error A complete log of this run can be found in: /root/.npm/_logs/2026-11-03T12_19_34_702Z-debug-0.log\n",
+          "is_backup_run": false
+        }
+      }
+    ],
+    "updated_at": "2026-11-03T13:46:15.267Z"
+  },
+  "config": {
+    "enabled": true,
+    "dry_run": true,
+    "allow_live_mutations": false,
+    "repos": [
+      {
+        "name": "example-org/astro-portfolio",
+        "default_branch": "main",
+        "enabled": true,
+        "max_diff_lines": 100,
+        "timeout_seconds": 300,
+        "allowed_paths": [
+          "docs/**",
+          "README.md",
+          "src/content/blog/**"
+        ],
+        "denied_paths": [
+          "package.json",
+          "astro.config.mjs"
+        ],
+        "supported_task_types": [
+          "doc_links",
+          "doc_formatting",
+          "doc_typos",
+          "curated_backlog",
+          "issue_task"
+        ],
+        "allow_ai_tasks": false,
+        "schedule": {
+          "enabled": true,
+          "time": "09:00",
+          "timezone": "Asia/Tashkent",
+          "backup_run_window_utc": "17:35"
+        },
+        "baseline_command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "test_commands": [
+          [
+            "npm",
+            "run",
+            "build"
+          ]
+        ],
+        "lint_commands": [
+          [
+            "npm",
+            "run",
+            "lint"
+          ]
+        ],
+        "curated_tasks": [
+          {
+            "id": "astro-readme-links",
+            "title": "Verify and fix relative docs links in Astro documentation",
+            "description": "Check for broken relative Markdown links in docs/ and README.md",
+            "rationale": "Ensures documentation navigation works smoothly for visitors",
+            "acceptance_criteria": [
+              "All relative links point to existing markdown files"
+            ],
+            "risk_level": "low",
+            "validation_strategy": "deterministic_markdown_link_check",
+            "source": "backlog",
+            "target_files": [
+              "README.md"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "example-org/fastapi-service",
+        "default_branch": "main",
+        "enabled": true,
+        "max_diff_lines": 120,
+        "timeout_seconds": 300,
+        "allowed_paths": [
+          "docs/**",
+          "README.md",
+          "*.md"
+        ],
+        "denied_paths": [
+          "pyproject.toml",
+          "setup.py"
+        ],
+        "supported_task_types": [
+          "doc_links",
+          "doc_formatting",
+          "doc_typos",
+          "curated_backlog",
+          "issue_task"
+        ],
+        "allow_ai_tasks": false,
+        "schedule": {
+          "enabled": true,
+          "time": "14:00",
+          "timezone": "Asia/Tashkent",
+          "backup_run_window_utc": "17:35"
+        },
+        "baseline_command": [
+          "pytest",
+          "-q"
+        ],
+        "test_commands": [
+          [
+            "pytest",
+            "-q"
+          ]
+        ],
+        "lint_commands": [
+          [
+            "flake8",
+            "docs/"
+          ]
+        ],
+        "curated_tasks": [
+          {
+            "id": "fastapi-doc-formatting",
+            "title": "Clean up trailing whitespace and ensure newline at EOF in docs",
+            "description": "Deterministic cleanup of trailing whitespace and missing newlines in documentation",
+            "rationale": "Keeps documentation clean according to markdown style guidelines",
+            "acceptance_criteria": [
+              "No trailing whitespace at end of lines",
+              "Files terminate with single newline"
+            ],
+            "risk_level": "low",
+            "validation_strategy": "deterministic_format_check",
+            "source": "backlog",
+            "target_files": [
+              "README.md",
+              "docs/index.md"
+            ]
+          }
+        ]
+      }
+    ],
+    "policy": {
+      "max_diff_lines": 150,
+      "max_tasks_per_run": 1,
+      "block_workflows": true,
+      "block_lockfiles": true,
+      "require_secret_scan": true,
+      "denied_paths": [
+        ".env*",
+        "*.env",
+        "*.key",
+        "*.pem",
+        "*.pfx",
+        "*.cert",
+        "*.p12",
+        ".github/workflows/**",
+        "package-lock.json",
+        "poetry.lock",
+        "Pipfile.lock",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "composer.lock",
+        "Cargo.lock",
+        "*.sh",
+        "*.bat",
+        "*.cmd",
+        "*.exe",
+        "*.bin",
+        ".dailygreen/**",
+        ".git/**"
+      ],
+      "disallowed_extensions": [
+        ".exe",
+        ".dll",
+        ".so",
+        ".sh",
+        ".bat",
+        ".cmd",
+        ".bin",
+        ".key",
+        ".pem"
+      ]
+    },
+    "ai": {
+      "provider": "mock",
+      "model": "gemini-1.5-flash",
+      "temperature": 0.2,
+      "max_tokens": 2048,
+      "timeout_seconds": 30,
+      "max_requests_per_run": 2
+    },
+    "state_dir": ".dailygreen"
+  }
+}

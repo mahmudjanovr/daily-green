@@ -8,6 +8,7 @@ import { RepositoriesTab } from './components/RepositoriesTab';
 import { SecurityPolicyTab } from './components/SecurityPolicyTab';
 import { AuditReportTab } from './components/AuditReportTab';
 import { VirtualFilesTab } from './components/VirtualFilesTab';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { DEFAULT_CONFIG, INITIAL_VIRTUAL_FILES } from './data/defaultConfig';
 import { DailyGreenConfig, RepoConfig, RunReport, SecurityPolicyConfig, VirtualFile } from './types';
 import { StateManager } from './services/stateManager';
@@ -133,99 +134,101 @@ export const App: React.FC = () => {
   const trippedCount = Object.values(stateMgr.getState().circuit_tripped || {}).filter(Boolean).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      <Header
-        config={config}
-        onToggleEnabled={handleToggleEnabled}
-        onToggleDryRun={handleToggleDryRun}
-        onToggleLiveMutations={handleToggleLiveMutations}
-        activeLeasesCount={activeLeasesCount}
-      />
+    <ErrorBoundary>
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+        <Header
+          config={config}
+          onToggleEnabled={handleToggleEnabled}
+          onToggleDryRun={handleToggleDryRun}
+          onToggleLiveMutations={handleToggleLiveMutations}
+          activeLeasesCount={activeLeasesCount}
+        />
 
-      <TabsNav
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        trippedCount={trippedCount}
-      />
+        <TabsNav
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          trippedCount={trippedCount}
+        />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'pipeline' && (
-          <PipelineTab
-            config={config}
-            stateMgr={stateMgr}
-            virtualFiles={virtualFiles}
-            onUpdateFiles={handleUpdateFiles}
-            onRunCompleted={handleRunCompleted}
-            selectedRepoName={selectedRepoName}
-            onSelectRepo={setSelectedRepoName}
-          />
-        )}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {activeTab === 'pipeline' && (
+            <PipelineTab
+              config={config}
+              stateMgr={stateMgr}
+              virtualFiles={virtualFiles}
+              onUpdateFiles={handleUpdateFiles}
+              onRunCompleted={handleRunCompleted}
+              selectedRepoName={selectedRepoName}
+              onSelectRepo={setSelectedRepoName}
+            />
+          )}
 
-        {activeTab === 'discovery' && (
-          <DiscoveryTab
-            config={config}
-            stateMgr={stateMgr}
-            virtualFiles={virtualFiles}
-            selectedRepoName={selectedRepoName}
-            onSelectRepo={setSelectedRepoName}
-            onSelectTaskForPipeline={(repo) => {
-              setSelectedRepoName(repo);
-              setActiveTab('pipeline');
-            }}
-          />
-        )}
+          {activeTab === 'discovery' && (
+            <DiscoveryTab
+              config={config}
+              stateMgr={stateMgr}
+              virtualFiles={virtualFiles}
+              selectedRepoName={selectedRepoName}
+              onSelectRepo={setSelectedRepoName}
+              onSelectTaskForPipeline={(repo) => {
+                setSelectedRepoName(repo);
+                setActiveTab('pipeline');
+              }}
+            />
+          )}
 
-        {activeTab === 'connectivity' && (
-          <ConnectivityTab
-            config={config}
-            githubToken={githubToken}
-            onUpdateGithubToken={handleUpdateGithubToken}
-          />
-        )}
+          {activeTab === 'connectivity' && (
+            <ConnectivityTab
+              config={config}
+              githubToken={githubToken}
+              onUpdateGithubToken={handleUpdateGithubToken}
+            />
+          )}
 
-        {activeTab === 'repositories' && (
-          <RepositoriesTab
-            config={config}
-            onUpdateRepo={handleUpdateRepo}
-            onAddRepo={handleAddRepo}
-            onDeleteRepo={handleDeleteRepo}
-          />
-        )}
+          {activeTab === 'repositories' && (
+            <RepositoriesTab
+              config={config}
+              onUpdateRepo={handleUpdateRepo}
+              onAddRepo={handleAddRepo}
+              onDeleteRepo={handleDeleteRepo}
+            />
+          )}
 
-        {activeTab === 'policy' && (
-          <SecurityPolicyTab
-            config={config}
-            onUpdatePolicy={handleUpdatePolicy}
-            onToggleKillSwitch={handleToggleEnabled}
-            onToggleDryRun={handleToggleDryRun}
-          />
-        )}
+          {activeTab === 'policy' && (
+            <SecurityPolicyTab
+              config={config}
+              onUpdatePolicy={handleUpdatePolicy}
+              onToggleKillSwitch={handleToggleEnabled}
+              onToggleDryRun={handleToggleDryRun}
+            />
+          )}
 
-        {activeTab === 'audit' && (
-          <AuditReportTab
-            config={config}
-            stateMgr={stateMgr}
-            onRefresh={() => setStateVersion((v) => v + 1)}
-          />
-        )}
+          {activeTab === 'audit' && (
+            <AuditReportTab
+              config={config}
+              stateMgr={stateMgr}
+              onRefresh={() => setStateVersion((v) => v + 1)}
+            />
+          )}
 
-        {activeTab === 'files' && (
-          <VirtualFilesTab
-            config={config}
-            virtualFiles={virtualFiles}
-            onUpdateFiles={handleUpdateFiles}
-            selectedRepoName={selectedRepoName}
-            onSelectRepo={setSelectedRepoName}
-          />
-        )}
-      </main>
+          {activeTab === 'files' && (
+            <VirtualFilesTab
+              config={config}
+              virtualFiles={virtualFiles}
+              onUpdateFiles={handleUpdateFiles}
+              selectedRepoName={selectedRepoName}
+              onSelectRepo={setSelectedRepoName}
+            />
+          )}
+        </main>
 
-      <footer className="border-t border-slate-800/80 bg-slate-900/60 py-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>DailyGreen Automated Maintenance & Quality Gate Harness</span>
-          <span>Rules-first • Mandatory Quality Gate • Cryptographic SHA-256 Patch Seal</span>
-        </div>
-      </footer>
-    </div>
+        <footer className="border-t border-slate-800/80 bg-slate-900/60 py-4 text-center text-xs text-slate-500">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span>DailyGreen Automated Maintenance & Quality Gate Harness</span>
+            <span>Rules-first • Mandatory Quality Gate • Cryptographic SHA-256 Patch Seal</span>
+          </div>
+        </footer>
+      </div>
+    </ErrorBoundary>
   );
 };

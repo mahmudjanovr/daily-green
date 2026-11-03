@@ -1,0 +1,70 @@
+name: DailyGreen Docker Build & Container Healthcheck
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'package*.json'
+      - 'server.ts'
+      - 'src/**'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Build Multi-Stage Container & Run Healthcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Production Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: dailygreen:test
+          load: true
+
+      - name: Test Container Startup & Healthcheck
+        run: |
+          docker run -d --name dg-test -p 3000:3000 \
+            -e NODE_ENV=production \
+            -e PORT=3000 \
+            -e DRY_RUN=true \
+            -e ALLOW_LIVE_MUTATIONS=false \
+            -e MAX_WORKERS=1 \
+            dailygreen:test
+
+          echo "Waiting for container startup..."
+          sleep 5
+
+          # Probe /api/health
+          HEALTH=$(curl -s http://localhost:3000/api/health || echo "FAILED")
+          echo "Health response: $HEALTH"
+
+          if [[ "$HEALTH" != *"healthy"* ]]; then
+            echo "::error::Container failed healthcheck!"
+            docker logs dg-test
+            exit 1
+          fi
+
+          echo "Container health check passed successfully."
+          docker stop dg-test && docker rm dg-test

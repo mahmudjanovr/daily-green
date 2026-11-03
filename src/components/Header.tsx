@@ -42,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
                 DailyGreen
                 <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  v1.2.0
+                  v1.3.0
                 </span>
               </h1>
               <div

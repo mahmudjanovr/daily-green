@@ -33,12 +33,12 @@ import {
 } from './workspace';
 import { executeSubprocess } from './worker';
 import { serverPersistence } from './persistence';
-import { discoverCandidateTask } from '../services/taskDiscovery';
-import { implementTaskDiff } from '../services/taskEngine';
-import { countDiffLines, evaluateSecurityCheck, sealPatch } from '../services/security';
+import { discoverNextTask } from '../services/discovery';
+import { implementTaskInWorkspace } from '../services/taskEngine';
+import { countDiffLines } from '../services/security';
 import { evaluateQualityGate } from '../services/qualityGate';
-import { defaultSecurityPolicy } from '../data/defaultPolicy';
-import { defaultAuthorizedRepos } from '../data/defaultRepos';
+import { DEFAULT_CONFIG, DEFAULT_POLICY } from '../data/defaultConfig';
+import { StateManager } from '../services/stateManager';
 
 export interface ActiveRunJob {
   record: ServerRunRecord;
@@ -48,8 +48,9 @@ export interface ActiveRunJob {
 
 export class ServerPipelineOrchestrator {
   private activeJobs: Map<string, ActiveRunJob> = new Map();
-  private authorizedRepos: RepoConfig[] = defaultAuthorizedRepos;
-  private policy: SecurityPolicyConfig = defaultSecurityPolicy;
+  private authorizedRepos: RepoConfig[] = DEFAULT_CONFIG.repos;
+  private policy: SecurityPolicyConfig = DEFAULT_POLICY;
+  private stateMgr = new StateManager();
 
   public setConfig(repos: RepoConfig[], policy: SecurityPolicyConfig) {
     this.authorizedRepos = repos;
@@ -291,7 +292,7 @@ export class ServerPipelineOrchestrator {
       record.current_stage = 'Stage 3: Task Discovery (Deterministic / Backlog)';
       await addLog('INFO', 'Running deterministic rules-first task discovery...');
 
-      const candidateTask = await discoverCandidateTask(repo, this.policy, initialFiles);
+      const candidateTask = discoverNextTask(initialFiles, repo, this.policy, this.stateMgr);
       if (!candidateTask) {
         await addLog('INFO', 'No eligible maintenance tasks found for this repository. Zero modifications needed.');
         record.status = 'completed';
@@ -344,7 +345,7 @@ export class ServerPipelineOrchestrator {
       record.current_stage = 'Stage 4: Task Execution & Patch Synthesis';
       await addLog('INFO', `Synthesizing patch for target files: ${candidateTask.target_files.join(', ')}`);
 
-      const executionResult = await implementTaskDiff(candidateTask, initialFiles);
+      const executionResult = implementTaskInWorkspace(initialFiles, candidateTask);
       await populateWorkspaceFiles(workspace, executionResult.updatedFiles);
       await addLog('INFO', `Applied patch in isolated workspace. Diff generated (${countDiffLines(executionResult.diff)} lines).`);
 
@@ -369,10 +370,15 @@ export class ServerPipelineOrchestrator {
         postLintResults.push(res);
       }
 
+      const fileContentsMap: Record<string, string> = {};
+      for (const f of executionResult.updatedFiles) {
+        fileContentsMap[f.path] = f.content;
+      }
+
       const qgResult = await evaluateQualityGate(
         candidateTask,
         executionResult.diff,
-        executionResult.updatedFiles,
+        fileContentsMap,
         repo,
         this.policy,
         baselineResult,

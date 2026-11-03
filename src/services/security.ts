@@ -2,7 +2,7 @@ import { RepoConfig, SecurityCheckResult, SecurityPolicyConfig } from '../types'
 
 export const SECRET_PATTERNS: Record<string, RegExp> = {
   'AWS Access Key': /AKIA[0-9A-Z]{16}/,
-  'GitHub Classic Token': /gh[posru]_[a-zA-Z0-9]{36}/,
+  'GitHub Classic Token': /gh[posru]_[a-zA-Z0-9_]{36}/,
   'GitHub Fine-Grained Token': /github_pat_[a-zA-Z0-9_]{82}/,
   'Private Key Block': /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/,
   'Generic High-Entropy Secret': /(?:api[_-]?key|secret[_-]?key|auth[_-]?token|password)\s*[:=]\s*['"][0-9a-zA-Z\-_]{16,}['"]/i,
@@ -45,7 +45,7 @@ export function redactSecrets(text: string, extraSecrets: string[] = []): string
   }
 
   redacted = redacted.replace(/https?:\/\/([^:\s/]+):([^@\s/]+)@/g, 'https://***:***@');
-  redacted = redacted.replace(/gh[posru]_[a-zA-Z0-9]{36}/g, '***REDACTED_GITHUB_TOKEN***');
+  redacted = redacted.replace(/gh[posru]_[a-zA-Z0-9_]{36}/g, '***REDACTED_GITHUB_TOKEN***');
   redacted = redacted.replace(/github_pat_[a-zA-Z0-9_]{82}/g, '***REDACTED_GITHUB_PAT***');
   redacted = redacted.replace(/AKIA[0-9A-Z]{16}/g, '***REDACTED_AWS_KEY***');
   redacted = redacted.replace(/xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32}/g, '***REDACTED_SLACK_TOKEN***');

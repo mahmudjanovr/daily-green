@@ -84,8 +84,11 @@ The React application implements the complete operational console for DailyGreen
 
 ---
 
-## 4. Local Development
+---
 
+## 4. Local Development & Production Execution
+
+### Local Development
 ```bash
 # Install dependencies
 npm install
@@ -93,13 +96,52 @@ npm install
 # Start development server on port 3000
 npm run dev
 
-# Compile and build for production
+# Run automated test suite
+npm test
+
+# Production build
 npm run build
+```
+
+### Production Deployment with Docker Compose
+```bash
+# Configure environment (copy template)
+cp .env.example .env
+
+# Launch production container with non-root privileges & healthchecks
+docker compose up -d --build
+
+# Verify container health
+curl -s http://localhost:3000/api/health | jq .
 ```
 
 ---
 
-## 5. GitHub Contribution Semantics
+## 5. SRE Observability & Monitoring Endpoints
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/health` | GET | Process health, system environment, and security invariant status |
+| `/api/metrics` | GET | SRE metrics: HTTP latencies (p50, p95), memory, disk, scheduler ticks |
+| `/api/logs` | GET | Structured JSON application logs with correlation IDs |
+| `/api/backups` | GET / POST | Disaster recovery: list and create atomic SHA-256 sealed backups |
+| `/api/ai/status`| GET | Gemini Intelligence provider status and token metrics |
+
+---
+
+## 6. Documentation Index
+
+- [Production Release Notes (v1.3.0)](docs/RELEASE_NOTES_v1.3.0.md)
+- [Docker Production Deployment Guide](docs/DOCKER.md)
+- [Security Architecture & Threat Model](docs/SECURITY.md)
+- [Disaster Recovery & Backup Guide](docs/BACKUP_AND_RECOVERY.md)
+- [Live Mutation Authorization Protocol (Two-Person Rule)](docs/LIVE_MUTATION_PROCEDURE.md)
+- [CI/CD Automation Pipelines](docs/CICD.md)
+- [Operations Manual & Runbook](docs/OPERATIONS.md)
+
+---
+
+## 7. GitHub Contribution Semantics
 
 - **Commit Squares**: Commits register on your contribution graph only after the Pull Request is merged into the default branch (`main`) or `gh-pages`, and when the Git author email matches a verified email address on your GitHub account.
 - **Pull Request Activity**: Pull Requests appear in your activity profile only if private contributions or PR activity is enabled in your GitHub profile settings.
@@ -107,6 +149,7 @@ npm run build
 
 ---
 
-## 6. License
+## 8. License
 
 MIT License.
+
