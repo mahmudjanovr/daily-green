@@ -16,23 +16,23 @@ permissions:
 jobs:
   validate:
     name: Lint, Test & Production Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Setup Node.js v22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: 'npm'
 
-      - name: Setup Host Python & Git CLI
-        uses: actions/setup-python@v5
+      - name: Setup Host Python 3.12 & Git CLI
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Install Dependencies
         run: npm ci

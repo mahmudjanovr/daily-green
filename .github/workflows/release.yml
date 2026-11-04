@@ -18,13 +18,13 @@ permissions:
 jobs:
   verify:
     name: Pre-Release Gatekeeper
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: 'npm'
@@ -39,14 +39,14 @@ jobs:
   deploy:
     name: Deploy to Production
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Protected production environment with mandatory approval
     environment:
       name: production
       url: https://dailygreen.internal.corp
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Verify Live Mutation Invariant
         run: |

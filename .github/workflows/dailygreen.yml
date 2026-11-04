@@ -35,7 +35,7 @@ permissions:
 jobs:
   worker:
     name: Evaluate & Verify Maintenance Task (Sandbox)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -46,10 +46,10 @@ jobs:
 
     steps:
       - name: Checkout DailyGreen Harness
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload Sealed Task Artifact
         if: steps.check_artifact.outputs.has_task == 'true'
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dailygreen-sealed-artifact
           path: .dailygreen/sealed_task.json
@@ -131,17 +131,17 @@ jobs:
     name: Deliver Sealed Pull Request (Trusted Delivery)
     needs: worker
     if: needs.worker.outputs.has_task == 'true' && needs.worker.outputs.dry_run == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write
     steps:
       - name: Checkout DailyGreen Harness
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -152,7 +152,7 @@ jobs:
           python -m pip install .
 
       - name: Download Sealed Task Artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: dailygreen-sealed-artifact
           path: .dailygreen/
