@@ -50,6 +50,15 @@ config/repos.yml
 *.key
 *.pem
 *.pfx
+*token*.txt
+*.token
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# DailyGreen runtime data
+.dailygreen-data/
 
 # IDE / Editor
 .vscode/

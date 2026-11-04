@@ -74,6 +74,11 @@ export async function createServer() {
   // Mount backend API routes
   app.use('/api', apiRouter);
 
+  // If an API route was not matched, return clean API 404 JSON (do not fall through to SPA)
+  app.use('/api', (req: Request, res: Response) => {
+    res.status(404).json({ error: 'Endpoint not found', code: 'NOT_FOUND' });
+  });
+
   // Development vs Production Frontend Integration
   const isProduction = process.env.NODE_ENV === 'production';
   const isTest = process.env.NODE_ENV === 'test' || process.argv.some((arg) => arg.includes('test'));
@@ -88,7 +93,11 @@ export async function createServer() {
     } else {
       const distPath = path.join(__dirname, 'dist');
       app.use(express.static(distPath));
-      app.get('*', (req, res) => {
+      app.use((req: Request, res: Response) => {
+        if (req.path.startsWith('/api') || req.originalUrl.startsWith('/api')) {
+          res.status(404).json({ error: 'Endpoint not found', code: 'NOT_FOUND' });
+          return;
+        }
         res.sendFile(path.join(distPath, 'index.html'));
       });
     }

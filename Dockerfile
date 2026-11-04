@@ -60,6 +60,7 @@ ENV NODE_ENV=production \
     DRY_RUN=true \
     ALLOW_LIVE_MUTATIONS=false \
     MAX_WORKERS=1 \
+    DAILYGREEN_ENABLED=false \
     DAILYGREEN_TIMEZONE=Asia/Tashkent
 
 EXPOSE 3000

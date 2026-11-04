@@ -17,6 +17,7 @@ services:
       - DRY_RUN=true
       - ALLOW_LIVE_MUTATIONS=false
       - MAX_WORKERS=1
+      - DAILYGREEN_ENABLED=false
       - DAILYGREEN_TIMEZONE=Asia/Tashkent
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:

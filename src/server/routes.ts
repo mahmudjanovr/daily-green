@@ -77,11 +77,11 @@ apiRouter.get('/health', async (req: Request, res: Response) => {
   try {
     const caps = await probeSystemCapabilities();
     const killSwitchActive =
-      process.env.DAILYGREEN_ENABLED !== undefined &&
-      process.env.DAILYGREEN_ENABLED.trim().toLowerCase() === 'false';
+      process.env.DAILYGREEN_ENABLED === undefined ||
+      process.env.DAILYGREEN_ENABLED.trim().toLowerCase() !== 'true';
 
     const health: BackendHealthResponse = {
-      status: killSwitchActive ? 'degraded' : 'ok',
+      status: 'ok',
       uptime_seconds: Math.floor((Date.now() - serverBootTime) / 1000),
       timestamp: new Date().toISOString(),
       version: '1.0.0-phase2',

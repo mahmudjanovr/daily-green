@@ -51,17 +51,20 @@ jobs:
             -e DRY_RUN=true \
             -e ALLOW_LIVE_MUTATIONS=false \
             -e MAX_WORKERS=1 \
+            -e DAILYGREEN_ENABLED=false \
             dailygreen:test
 
           echo "Waiting for container startup..."
           sleep 5
 
-          # Probe /api/health
-          HEALTH=$(curl -s http://localhost:3000/api/health || echo "FAILED")
+          # Probe /api/health verifying HTTP 200 and status: ok
+          HTTP_CODE=$(curl -s -o /tmp/health.json -w "%{http_code}" http://localhost:3000/api/health || echo "FAILED")
+          HEALTH=$(cat /tmp/health.json 2>/dev/null || echo "FAILED")
+          echo "HTTP status code: $HTTP_CODE"
           echo "Health response: $HEALTH"
 
-          if [[ "$HEALTH" != *"healthy"* ]]; then
-            echo "::error::Container failed healthcheck!"
+          if [ "$HTTP_CODE" != "200" ] || [[ "$HEALTH" != *'"status":"ok"'* && "$HEALTH" != *'"status": "ok"'* ]]; then
+            echo "::error::Container failed healthcheck! Expected HTTP 200 and JSON status: ok"
             docker logs dg-test
             exit 1
           fi
